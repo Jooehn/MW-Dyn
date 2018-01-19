@@ -10,7 +10,7 @@ from random import *
 
 import cProfile
 import re
-cProfile.run('bootstrap_err(data, para, epara)')
+
 
 ############## Initialiser ##################
 
@@ -35,6 +35,18 @@ except NameError:
 
 data = Table(data_raw, copy=True)
 
+RA = data['RAdeg']*u.degree
+DEC = data['DEdeg']*u.degree
+dist = data['distance']*u.pc
+pm_RA = data['pmRA_TGAS']*u.mas/u.yr
+pm_DEC = data['pmDE_TGAS']*u.mas/u.yr
+rad_vel = data['HRV']*u.km/u.s
+
+e_dist = data['edistance']*u.pc
+e_pm_RA = data['pmRA_error_TGAS']*u.mas/u.yr
+e_pm_DEC = data['pmDE_error_TGAS']*u.mas/u.yr
+e_rad_vel = data['eHRV']*u.km/u.s
+
 """Removing data for given thresholds of relative distances and errors"""
 
 #row_ind=[]
@@ -51,13 +63,14 @@ data = Table(data_raw, copy=True)
 
 """Obtaining data in GC coords after initiating with ICRS frame"""
 
+icrs=coord.ICRS(ra = RA,dec = DEC,distance=dist,
+                pm_ra_cosdec=pm_RA,
+                pm_dec=pm_DEC,
+                radial_velocity=rad_vel)
 
-icrs=coord.ICRS(ra = data['RAdeg']*u.degree,dec = data['DEdeg']*u.degree,distance=data['distance']*u.pc,
-                pm_ra_cosdec=data['pmRA_TGAS']*u.mas/u.yr,
-                pm_dec=data['pmDE_TGAS']*u.mas/u.yr,
-                radial_velocity=data['HRV']*u.km/u.s)
-
-
+#e_icrs = coord.ICRS(ra=RA, dec= e_DEC, distance = e_dist,
+#                    pm_ra_cosdec=e_pm_RA, pm_dec=e_pm_DEC,
+#                    radial_velocity = e_rad_vel)
 
 gc = icrs.transform_to(coord.Galactocentric(galcen_distance = gc_sun_dist*u.kpc, galcen_v_sun=v_sun))
 gc.set_representation_cls(coord.CylindricalRepresentation)
@@ -67,39 +80,42 @@ gc.set_representation_cls(coord.CylindricalRepresentation)
 
 
 
-def bootstrap_err(table, par, e_par):
+my_sample = np.array([dist, pm_RA, pm_DEC, rad_vel])
+
+e_my_sample = np.array([e_dist, e_pm_RA, e_pm_DEC, e_rad_vel])
+
+
+
+def bootstrap_err(sample, e_sample):
     
     """Function that implements bootstrapping for uncertainties. Takes the arguments:
-    table: the table at hand containing all the data
-    par: a list of strings that describe all the quantities that should be resampled
-    e_par: same type of list as par but for the error in said quantities"""
+    sample: the sample at hand containing all the data
+    e_sample: the errors for the quantities in the sample"""
     
-    boot = Table(table, copy = True)
     
-    for i in range(len(par)):
+    for i in range(len(sample)):  
         
-
-        
-        for j in range(len(boot[par[i]])):
+        for j in range(len(sample[i])):
             
-            err = boot[e_par[i]][j]
+            err = e_sample[i][j]
             
             
             rand_err = round(uniform(-err,err),len(str(err).split('.')[1]))
                  
             
-            boot[par[i]][j] = boot[par[i]][j]+rand_err
+            sample[i][j] = sample[i][j]+rand_err
                    
-    icrs_res=coord.ICRS(ra = boot['RAdeg']*u.degree,dec = boot['DEdeg']*u.degree,distance=boot['distance']*u.pc,
-        pm_ra_cosdec=boot['pmRA_TGAS']*u.mas/u.yr,
-        pm_dec=boot['pmDE_TGAS']*u.mas/u.yr,
-        radial_velocity=boot['HRV']*u.km/u.s)
-    
-    gc_res = icrs_res.transform_to(coord.Galactocentric(galcen_distance = gc_sun_dist*u.kpc, galcen_v_sun=v_sun))
-    gc_res.set_representation_cls(coord.CylindricalRepresentation)
-    
-    return gc_res
+#    icrs_res=coord.ICRS(ra = RA,dec = DEC,distance=sample[0]*u.pc,
+#        pm_ra_cosdec=sample[1]*u.mas/u.yr,
+#        pm_dec=sample[2]*u.mas/u.yr,
+#        radial_velocity=sample[3]*u.km/u.s)
+#    
+#    gc_res = icrs_res.transform_to(coord.Galactocentric(galcen_distance = gc_sun_dist*u.kpc, galcen_v_sun=v_sun))
+#    gc_res.set_representation_cls(coord.CylindricalRepresentation)
+#    
+    return sample
 
+#cProfile.run('bootstrap_err(my_sample,e_my_sample)')
 
 #try:
 #    resample
@@ -121,22 +137,20 @@ def bootstrap_err(table, par, e_par):
 
 """The plotter"""
 
-#N=5
-#
-#resample = bootstrap_err(data, para, epara)
-#
-#plt.figure()
-#plt.title('$\mathrm{Histogram\ of\ stars\ with\ a\ given\ angular\ velocity\ }v_\phi$',fontdict=font)
-#plt.ylabel('$\mathrm{Number\ of\ stars}$', fontdict=font)
-#plt.xlabel('$v_\phi$')
-#plt.hist(gc.d_phi, bins=100, log=True, range=(-12,12),histtype='step')
-#
-#for i in range(N):
-#    resample = bootstrap_err(data, para, epara)
-#    plt.hist(resample.d_phi, bins=100, log=True, range=(-12,12),histtype='step')
-#plt.ylim(0,600)
+N=5
 
-#plt.show()
+plt.figure()
+plt.title('$\mathrm{Histogram\ of\ stars\ with\ a\ given\ angular\ velocity\ }v_\phi$',fontdict=font)
+plt.ylabel('$\mathrm{Number\ of\ stars}$', fontdict=font)
+plt.xlabel('$v_\phi$')
+plt.hist(gc.d_phi, bins=100, log=True, range=(-12,12),histtype='step')
+
+for i in range(N):
+    resample = bootstrap_err(my_sample,e_my_sample)
+    plt.hist(resample.d_phi, bins=100, log=True, range=(-12,12),histtype='step')
+plt.ylim(0,600)
+
+plt.show()
 
 #plt.savefig('100_bins.jpg')
 
@@ -155,5 +169,14 @@ def bootstrap_err(table, par, e_par):
 
 #def bootstrap_rand(data):
         
-#def bootstrap_mean(data, N):
+def bootstrap_mean(sample, e_sample, N):
+    
+    
+    
+    for i in range(N):
+        
+        bootstrap_err(sample,e_sample)
+        
+        
+
     
