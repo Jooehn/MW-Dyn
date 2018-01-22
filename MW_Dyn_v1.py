@@ -75,7 +75,7 @@ class Bootstrap:
     Takes the args:
         
         sample: The data sample at hand. Needs to be converted from Tablet to a set of arrays
-        e_sample: Eventual errors in the sample quantities. Required to use Bootstrap.bootstrap_err. Should be same shape as sample
+        e_sample: Errors in the sample quantities if any. Required to use Bootstrap.bootstrap_err. Should be same shape as sample
         data_order: Just a conventient way to see the order of quantities in sample. Not needed to initialise
         
     Functions:
