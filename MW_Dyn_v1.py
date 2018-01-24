@@ -108,6 +108,8 @@ class Bootstrap:
         
         self.mean_sample = None
         
+        self.st_dev = None
+        
         icrs=coord.ICRS(ra = RA,dec = DEC,distance=self.sample[0]*u.pc,
                         pm_ra_cosdec=self.sample[1]*u.mas/u.yr,
                         pm_dec=self.sample[2]*u.mas/u.yr,
@@ -159,8 +161,6 @@ class Bootstrap:
         self.gc_res = icrs_res.transform_to(coord.Galactocentric(galcen_distance = gc_sun_dist*u.kpc, galcen_v_sun=v_sun))
         self.gc_res.set_representation_cls(coord.CylindricalRepresentation)
     
-        self.gc_res.d_phi.value
-    
         return self.gc_res.d_phi.value
         
     def bootstrap_mean(self, N, N_bins=None):
@@ -189,7 +189,44 @@ class Bootstrap:
         self.mean_sample = s/N
             
         return self.mean_sample
-
+    
+    
+#    def get_st_dev(self, N_bins, N, method):
+#        
+#        
+#        s = np.zeros(N_bins)
+#        
+#        self.bin_heights, self.bin_vals = np.histogram(self.gc.d_phi.value, bins=N_bins)
+#        
+#        if method == 'error':
+#            
+#            for i in range(N):
+#                
+#                
+#        
+#                icrs_res=coord.ICRS(ra = RA,dec = DEC,distance=self.resample[0]*u.pc,
+#                        pm_ra_cosdec=self.resample[1]*u.mas/u.yr,
+#                        pm_dec=self.resample[2]*u.mas/u.yr,
+#                        radial_velocity=self.resample[3]*u.km/u.s)
+#        
+#                self.gc_res = icrs_res.transform_to(coord.Galactocentric(galcen_distance = gc_sun_dist*u.kpc, galcen_v_sun=v_sun))
+#                self.gc_res.set_representation_cls(coord.CylindricalRepresentation)
+#                
+#                self.re_bin_heights, bin_vals = np.histogram(self.gc_res.d_phi, bins=self.bin_vals)
+#         
+#                s += (self.bin_heights-self.re_bin_heights)**2
+#            
+#        else:
+#            
+#            for i in range(N):
+#    
+#                self.re_bin_heights, bin_vals = np.histogram(self.bootstrap_rand(), bins=self.bin_vals)
+#              
+#                s += (self.bin_heights-self.re_bin_heights)**2
+#    
+#        self.st_dev = sqrt(s/N)
+#        
+#        return self.st_dev
     
     def plot_sample(self,lim,N_bins=None):
         
@@ -295,11 +332,11 @@ class Bootstrap:
 
 #cProfile.run('smp.bootstrap_err(e_my_sample)')
         
-#smp = Bootstrap(my_sample,e_my_sample,my_data_order)
+smp = Bootstrap(my_sample,e_my_sample,my_data_order)
 
 """1. Making a histogram with 100 bins of original sample and 10 resamples using bootstrap_rand"""
 
-smp.plot_resamples(10, 'random', 14, N_bins=100)
+#smp.plot_resamples(10, 'random', 14, N_bins=50)
 
 """2. Making a histogram with 100 bins of original sample and 5 resamples using bootstrap_err. Takes ~30 s!"""
 
