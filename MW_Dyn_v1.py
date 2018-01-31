@@ -83,9 +83,8 @@ class Bootstrap:
         
         bootstrap_err: implements bootstrapping for uncertainties. Returns a resampling of the original sample
         bootstrap_rand: creates a random resample of angular velocities from the original sample
-        bootstrap_mean: computes the mean of N resamples from bootstrap_err or bootstrap_mean. If the intention is to compute
-            the average value from bootstrap_rand, the average amount of counts in each bin is returned. 
-            Thus the number of bins need to be given in N_bins
+        bootstrap_mean: computes the mean of N resamples from bootstrap_err or bootstrap_mean.
+        get_st_dev: computes the standard deviation for N resamples in every bin for either the 'error' or 'rand' method
         plot_sample: plots the original sample in a histogram
         plot_resample: plots N resamples computed using a given method within a given v_phi limit
         plot_mean: plots the computed mean that is stored in self.mean_sample
@@ -115,6 +114,8 @@ class Bootstrap:
                         pm_ra_cosdec=self.sample[1]*u.mas/u.yr,
                         pm_dec=self.sample[2]*u.mas/u.yr,
                         radial_velocity=self.sample[3]*u.km/u.s)
+        
+        
 
         self.gc = icrs.transform_to(coord.Galactocentric(galcen_distance = gc_sun_dist*u.kpc, galcen_v_sun=v_sun))
         self.gc.set_representation_cls(coord.CylindricalRepresentation)
@@ -209,8 +210,6 @@ class Bootstrap:
     
     def get_st_dev(self, N_bins, N, method):
         
-        """Add way to keep the mean values of the resamples in order to plot."""
-        
         self.v_phis = np.zeros([N,N_bins])
         
         s = np.zeros(N_bins)
@@ -219,7 +218,7 @@ class Bootstrap:
         
         self.bin_heights, self.bin_vals = np.histogram(self.v_phi, bins=N_bins)
         
-        if method == 'error':
+        if method in ('error','err'):
             
             func = self.bootstrap_err
         
@@ -281,26 +280,32 @@ class Bootstrap:
 
         if method == 'random':
                 
-            func = self.bootstrap_rand()
-                
+            func = self.bootstrap_rand
+            
         else:
                 
-            func = self.bootstrap_err()
+            func = self.bootstrap_err
 
         for i in range(N):
     
-            func
+            func()
         
             plt.hist(self.res_v_phi, bins=N_bins, log=True, range=(-lim,lim),histtype='step')
     
         plt.legend()
         
     
-    def plot_mean(self, lim, err=False, N_bins=None):
+    def plot_mean(self, lim, err=False, N_bins=None, ymax=None,ymin=None):
         
 
         if any(self.mean_sample) == None:
             raise Exception('You need to compute a mean using your method of choice before plotting')
+            
+        if ymax == None:
+            ymax = 100000
+            
+        if ymin == None:
+            ymin = 1
         
         if N_bins == None:
             N_bins = len(self.mean_sample)            
@@ -314,9 +319,10 @@ class Bootstrap:
         plt.xlabel('$v_\phi\ /\ \mathrm{mas\ kpc\ yr}^{-1}$', fontdict=font)
         
         plt.bar(self.bin_vals[:-1], self.bin_heights, width=np.diff(self.bin_vals),color='none',edgecolor='blue', log=True,label='Sample')
-        plt.bar(self.bin_vals[:-1], self.mean_sample, width=np.diff(self.bin_vals),yerr = err,color='none', log=True,label='Mean of resample using {} bins'.format(N_bins),edgecolor='orange')#, range=(-lim,lim),histtype='step',label='Mean of resample')
+        plt.bar(self.bin_vals[:-1], self.mean_sample, width=np.diff(self.bin_vals),color='none', log=True,label='Mean of resample using {} bins'.format(N_bins),edgecolor='orange')#, range=(-lim,lim),histtype='step',label='Mean of resample')
+        plt.errorbar(self.bin_vals[:-1], self.mean_sample, yerr = err, fmt = 'none', ecolor = 'black', elinewidth=min(np.diff(self.bin_vals))/1.5)
         plt.xlim(-lim,lim)
-        plt.ylim(1,100000)
+        plt.ylim(ymin,ymax)
             
            
         plt.legend()
@@ -328,10 +334,10 @@ class Bootstrap:
         
 
 ############## Tests ##################
-
-#cProfile.run('smp.bootstrap_err(e_my_sample)')
         
 smp = Bootstrap(my_sample,e_my_sample,my_data_order)
+
+#cProfile.run('smp.get_st_dev(100,10,str(rand))')
 
 """1. Making a histogram with 100 bins of original sample and 10 resamples using bootstrap_rand"""
 
