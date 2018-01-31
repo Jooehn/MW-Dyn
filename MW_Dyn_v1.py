@@ -121,6 +121,8 @@ class Bootstrap:
         
         self.v_phi = self.gc.d_phi*self.gc.rho.to(u.kpc)
         
+        self.v_phis = None
+        
         self.gc_res = None
         
         self.res_v_phi = None
@@ -186,23 +188,19 @@ class Bootstrap:
         
         if method == 'rand':
             
-            for i in range(N):
-                
-                self.bin_heights, self.bin_vals = np.histogram(self.v_phi, bins=N_bins)
-                
-                self.re_bin_heights, bin_vals = np.histogram(self.bootstrap_rand(), bins=self.bin_vals)
-                
-                s += self.re_bin_heights
-
+            func = bootstrap.rand().value
+            
         else:
             
-            for i in range(N):
-                
-                self.bin_heights, self.bin_vals = np.histogram(self.v_phi, bins=N_bins)
-                
-                self.re_bin_heights, bin_vals = np.histogram(self.bootstrap_err(), bins=self.bin_vals)
-                
-                s += self.re_bin_heights
+            func = bootstrap.err().value
+            
+        for i in range(N):
+            
+            self.bin_heights, self.bin_vals = np.histogram(self.v_phi, bins=N_bins)
+            
+            self.re_bin_heights, bin_vals = np.histogram(func, bins=self.bin_vals)
+            
+            s += self.re_bin_heights
             
         self.mean_sample = s/N
             
@@ -213,39 +211,45 @@ class Bootstrap:
         
         """Add way to keep the mean values of the resamples in order to plot."""
         
-        v_phis = np.zeros([N,N_bins])
+        self.v_phis = np.zeros([N,N_bins])
         
         s = np.zeros(N_bins)
         
-        m = np.zeros([N, N_bins])
+        var = np.zeros(N_bins)
         
         self.bin_heights, self.bin_vals = np.histogram(self.v_phi, bins=N_bins)
         
         if method == 'error':
             
-            func = self.bootstrap_err()
+            func = self.bootstrap_err
         
         else:
             
-            func = self.bootstrap_rand()
+            func = self.bootstrap_rand
             
         for i in range(N):
             
-            self.re_bin_heights, bin_vals = np.histogram(func, bins=self.bin_vals)
+            self.re_bin_heights, bin_vals = np.histogram(func(), bins=self.bin_vals)
             
-            v_phis[i] = self.re_bin_heights
+            self.v_phis[i] = self.re_bin_heights
 
             s+=self.re_bin_heights
             
         s = s/N
             
-        for i in range(N):
+        for i in range(N_bins):
             
-            m = (v_phis[i] - s[i])**2
+            for j in range(N):
+                
+                var[i] += (self.v_phis[j][i] - s[i])**2
+            
+        self.mean_sample = s
     
-        self.st_dev = sqrt(m/N)
+        st_dev = sqrt(var/N)
         
-        return self.st_dev, v_phis
+        self.st_dev = st_dev
+        
+        return self.st_dev
     
     def plot_sample(self,lim,N_bins=None):
         
@@ -279,7 +283,6 @@ class Bootstrap:
                 
             func = self.bootstrap_rand()
                 
-                
         else:
                 
             func = self.bootstrap_err()
@@ -293,40 +296,27 @@ class Bootstrap:
         plt.legend()
         
     
-    def plot_mean(self, lim, N_bins=None):
+    def plot_mean(self, lim, err=False, N_bins=None):
         
+
         if any(self.mean_sample) == None:
             raise Exception('You need to compute a mean using your method of choice before plotting')
         
         if N_bins == None:
-            N_bins = len(self.mean_sample)
+            N_bins = len(self.mean_sample)            
+    
+        if err is True:
+            err = self.st_dev
             
         plt.figure()
         plt.title('$\mathrm{Histogram\ of\ stars\ with\ a\ given\ angular\ velocity\ }v_\phi$')
         plt.ylabel('$\mathrm{Number\ of\ stars}$')
         plt.xlabel('$v_\phi\ /\ \mathrm{mas\ kpc\ yr}^{-1}$', fontdict=font)
         
-        if self.mean_sample.shape == (shape(self.sample)):
-
-            icrs_res=coord.ICRS(ra = RA,dec = DEC,distance=self.mean_sample[0]*u.pc,
-                    pm_ra_cosdec=self.mean_sample[1]*u.mas/u.yr,
-                    pm_dec=self.mean_sample[2]*u.mas/u.yr,
-                    radial_velocity=self.mean_sample[3]*u.km/u.s)
-    
-            self.gc_res = icrs_res.transform_to(coord.Galactocentric(galcen_distance = gc_sun_dist*u.kpc, galcen_v_sun=v_sun))
-            self.gc_res.set_representation_cls(coord.CylindricalRepresentation)
-            
-            d_phi = self.gc_res.d_phi
-            
-            self.plot_sample(lim,N_bins)
-            plt.hist(d_phi, bins=N_bins, log=True, range=(-lim,lim),histtype='step',label='Mean of resample using {} bins'.format(N_bins))
-            
-        else:
-            d_phi = self.mean_sample
-            
-            plt.bar(self.bin_vals[:-1], self.bin_heights,color='blue', log=True,label='Sample')
-            plt.bar(self.bin_vals[:-1], self.mean_sample,color='orange', log=True,label='Mean of resample using {} bins'.format(N_bins))#, range=(-lim,lim),histtype='step',label='Mean of resample')
-            plt.xlim(-lim,lim)
+        plt.bar(self.bin_vals[:-1], self.bin_heights, width=np.diff(self.bin_vals),color='none',edgecolor='blue', log=True,label='Sample')
+        plt.bar(self.bin_vals[:-1], self.mean_sample, width=np.diff(self.bin_vals),yerr = err,color='none', log=True,label='Mean of resample using {} bins'.format(N_bins),edgecolor='orange')#, range=(-lim,lim),histtype='step',label='Mean of resample')
+        plt.xlim(-lim,lim)
+        plt.ylim(1,100000)
             
            
         plt.legend()
