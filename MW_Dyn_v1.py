@@ -3,9 +3,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 import astropy.units as u
 import astropy.coordinates as coord
+import random
 from astropy.io import ascii
 from astropy.table import Table
-from random import *
 
 import cProfile
 
@@ -33,19 +33,23 @@ except NameError:
 
 data = Table(data_raw, copy=True)
 
+"""flag_list should contain the flags that are to be removed from the data if raised"""
 
+flag_list = ['flag_any']
 
 try:
     bad_rows
 except NameError:
     bad_rows=[]
-    for i in range(len(data)):
+    
+    for i in range(len(flag_list)):
         
-        if data['flag_dup'][i]== 1:
+        for j in range(len(data[flag_list[i]])):
             
-            bad_rows.append(i)
+            if data['flag_any'][j]==1:
+                bad_rows.append(j)
             
-    data.remove_rows(bad_rows)
+data.remove_rows(bad_rows)
 
 RA = data['RAdeg']*u.degree
 DEC = data['DEdeg']*u.degree
@@ -151,9 +155,9 @@ class Bootstrap:
                 self.resample[i][j] = self.sample[i][j]+rand_err
                 
         icrs_res=coord.ICRS(ra = RA,dec = DEC,distance=self.resample[0]*u.pc,
-        pm_ra_cosdec=self.resample[1]*u.mas/u.yr,
-        pm_dec=self.resample[2]*u.mas/u.yr,
-        radial_velocity=self.resample[3]*u.km/u.s)
+                            pm_ra_cosdec=self.resample[1]*u.mas/u.yr,
+                            pm_dec=self.resample[2]*u.mas/u.yr,
+                            radial_velocity=self.resample[3]*u.km/u.s)
 
         self.gc_res = icrs_res.transform_to(coord.Galactocentric(galcen_distance = gc_sun_dist*u.kpc, galcen_v_sun=v_sun))
         self.gc_res.set_representation_cls(coord.CylindricalRepresentation)
@@ -166,7 +170,7 @@ class Bootstrap:
         
         for i in range(len(self.sample_tp)):
             
-            self.resample_tp[i]=choice(self.sample_tp)
+            self.resample_tp[i]=random.choice(self.sample_tp)
             
         self.resample = self.resample_tp.transpose()
             
@@ -281,27 +285,33 @@ class Bootstrap:
 
         if method == 'random':
                 
-            func = self.bootstrap_rand()
+            func = self.bootstrap_rand
                 
         else:
                 
-            func = self.bootstrap_err()
+            func = self.bootstrap_err
 
         for i in range(N):
     
-            func
+            func()
         
             plt.hist(self.res_v_phi, bins=N_bins, log=True, range=(-lim,lim),histtype='step')
     
         plt.legend()
         
     
-    def plot_mean(self, lim, err=False, N_bins=None):
+    def plot_mean(self, lim, err=False, N_bins=None, ymin=None, ymax=None):
         
 
         if any(self.mean_sample) == None:
             raise Exception('You need to compute a mean using your method of choice before plotting')
         
+        if ymax == None:
+            ymax = 100000
+        
+        if ymin == None:
+            ymin = 1
+            
         if N_bins == None:
             N_bins = len(self.mean_sample)            
     
@@ -314,9 +324,10 @@ class Bootstrap:
         plt.xlabel('$v_\phi\ /\ \mathrm{mas\ kpc\ yr}^{-1}$', fontdict=font)
         
         plt.bar(self.bin_vals[:-1], self.bin_heights, width=np.diff(self.bin_vals),color='none',edgecolor='blue', log=True,label='Sample')
-        plt.bar(self.bin_vals[:-1], self.mean_sample, width=np.diff(self.bin_vals),yerr = err,color='none', log=True,label='Mean of resample using {} bins'.format(N_bins),edgecolor='orange')#, range=(-lim,lim),histtype='step',label='Mean of resample')
+        plt.bar(self.bin_vals[:-1], self.mean_sample, width=np.diff(self.bin_vals),color='none', log=True,label='Mean of resample using {} bins'.format(N_bins),edgecolor='orange')#, range=(-lim,lim),histtype='step',label='Mean of resample')
+        plt.errorbar(self.bin_vals[:-1], self.mean_sample, yerr=err, fmt='none',ecolor='black', elinewidth=min(np.diff(self.bin_vals))/1.25 )
         plt.xlim(-lim,lim)
-        plt.ylim(1,100000)
+        plt.ylim(ymin,ymax)
             
            
         plt.legend()
