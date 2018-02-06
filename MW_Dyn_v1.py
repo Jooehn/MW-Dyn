@@ -58,6 +58,8 @@ pm_RA = data['pmRA_TGAS']*u.mas/u.yr
 pm_DEC = data['pmDE_TGAS']*u.mas/u.yr
 rad_vel = data['HRV']*u.km/u.s
 
+e_RA = np.zeros(len(data))*u.degree
+e_DEC = np.zeros(len(data))*u.degree
 e_dist = data['edistance']*u.pc
 e_pm_RA = data['pmRA_error_TGAS']*u.mas/u.yr
 e_pm_DEC = data['pmDE_error_TGAS']*u.mas/u.yr
@@ -66,11 +68,11 @@ e_rad_vel = data['eHRV']*u.km/u.s
 
 ############## Bootstrapper ##################
 
-my_data_order=['dist', 'pm_RA', 'pm_DEC', 'rad_vel']
+my_data_order=['RA', 'DEC', 'dist', 'pm_RA', 'pm_DEC', 'rad_vel']
 
-my_sample = np.array([dist, pm_RA, pm_DEC, rad_vel])
+my_sample = np.array([RA, DEC, dist, pm_RA, pm_DEC, rad_vel])
 
-e_my_sample = np.array([e_dist, e_pm_RA, e_pm_DEC, e_rad_vel])
+e_my_sample = np.array([e_RA, e_DEC, e_dist, e_pm_RA, e_pm_DEC, e_rad_vel])
 
 class Bootstrap:
     
@@ -115,10 +117,11 @@ class Bootstrap:
         
         self.st_dev = None
         
-        icrs=coord.ICRS(ra = RA,dec = DEC,distance=self.sample[0]*u.pc,
-                        pm_ra_cosdec=self.sample[1]*u.mas/u.yr,
-                        pm_dec=self.sample[2]*u.mas/u.yr,
-                        radial_velocity=self.sample[3]*u.km/u.s)
+        icrs=coord.ICRS(ra = self.sample[0]*u.degree,dec = self.sample[1]*u.degree,
+                        distance=self.sample[2]*u.pc,
+                        pm_ra_cosdec=self.sample[3]*u.mas/u.yr,
+                        pm_dec=self.sample[4]*u.mas/u.yr,
+                        radial_velocity=self.sample[5]*u.km/u.s)
 
         self.gc = icrs.transform_to(coord.Galactocentric(galcen_distance = gc_sun_dist*u.kpc, galcen_v_sun=v_sun))
         self.gc.set_representation_cls(coord.CylindricalRepresentation)
@@ -142,7 +145,7 @@ class Bootstrap:
         if any(self.e_sample) == None:
             raise Exception('Uncertainties are needed to perform this action')
         
-        for i in range(len(self.sample)):  
+        for i in range(2,len(self.e_sample)):  
             
             for j in range(len(self.sample_tp)):
                 
@@ -150,14 +153,15 @@ class Bootstrap:
                 
                 n_deci = len(str(err).split('.')[1]) 
                 
-                rand_err = round(uniform(-err,err),n_deci)
+                rand_err = round(random.uniform(-err,err),n_deci)
                 
                 self.resample[i][j] = self.sample[i][j]+rand_err
                 
-        icrs_res=coord.ICRS(ra = RA,dec = DEC,distance=self.resample[0]*u.pc,
-                            pm_ra_cosdec=self.resample[1]*u.mas/u.yr,
-                            pm_dec=self.resample[2]*u.mas/u.yr,
-                            radial_velocity=self.resample[3]*u.km/u.s)
+        icrs_res=coord.ICRS(ra = self.sample[0]*u.degree,dec = self.sample[1]*u.degree,
+                            distance=self.resample[2]*u.pc,
+                            pm_ra_cosdec=self.resample[3]*u.mas/u.yr,
+                            pm_dec=self.resample[4]*u.mas/u.yr,
+                            radial_velocity=self.resample[5]*u.km/u.s)
 
         self.gc_res = icrs_res.transform_to(coord.Galactocentric(galcen_distance = gc_sun_dist*u.kpc, galcen_v_sun=v_sun))
         self.gc_res.set_representation_cls(coord.CylindricalRepresentation)
@@ -174,10 +178,11 @@ class Bootstrap:
             
         self.resample = self.resample_tp.transpose()
             
-        icrs_res=coord.ICRS(ra = RA,dec = DEC,distance=self.resample[0]*u.pc,
-                            pm_ra_cosdec=self.resample[1]*u.mas/u.yr,
-                            pm_dec=self.resample[2]*u.mas/u.yr,
-                            radial_velocity=self.resample[3]*u.km/u.s)
+        icrs_res=coord.ICRS(ra = self.resample[0]*u.degree,dec = self.resample[1]*u.degree,
+                            distance=self.resample[2]*u.pc,
+                            pm_ra_cosdec=self.resample[3]*u.mas/u.yr,
+                            pm_dec=self.resample[4]*u.mas/u.yr,
+                            radial_velocity=self.resample[5]*u.km/u.s)
 
         self.gc_res = icrs_res.transform_to(coord.Galactocentric(galcen_distance = gc_sun_dist*u.kpc, galcen_v_sun=v_sun))
         self.gc_res.set_representation_cls(coord.CylindricalRepresentation)
@@ -223,7 +228,7 @@ class Bootstrap:
         
         self.bin_heights, self.bin_vals = np.histogram(self.v_phi, bins=N_bins)
         
-        if method == 'error':
+        if method in ('error','err'):
             
             func = self.bootstrap_err
         
@@ -298,6 +303,8 @@ class Bootstrap:
             plt.hist(self.res_v_phi, bins=N_bins, log=True, range=(-lim,lim),histtype='step')
     
         plt.legend()
+        
+        return
         
     
     def plot_mean(self, lim, err=False, N_bins=None, ymin=None, ymax=None):
