@@ -117,16 +117,18 @@ class Bootstrap:
         
         self.st_dev = None
         
-        icrs=coord.ICRS(ra = self.sample[0]*u.degree,dec = self.sample[1]*u.degree,
+        self.icrs=coord.ICRS(ra = self.sample[0]*u.degree,dec = self.sample[1]*u.degree,
                         distance=self.sample[2]*u.pc,
                         pm_ra_cosdec=self.sample[3]*u.mas/u.yr,
                         pm_dec=self.sample[4]*u.mas/u.yr,
                         radial_velocity=self.sample[5]*u.km/u.s)
 
-        self.gc = icrs.transform_to(coord.Galactocentric(galcen_distance = gc_sun_dist*u.kpc, galcen_v_sun=v_sun))
+        self.gc = self.icrs.transform_to(coord.Galactocentric(galcen_distance = gc_sun_dist*u.kpc, galcen_v_sun=v_sun))
         self.gc.set_representation_cls(coord.CylindricalRepresentation)
+
+        self.icrs_res=None
         
-        self.v_phi = self.gc.d_phi*self.gc.rho.to(u.kpc)
+        self.v_phi = (self.gc.d_phi*self.gc.rho.to(u.kpc)).to(u.km/u.s,equivalencies =u.dimensionless_angles())
         
         self.v_phis = None
         
@@ -166,7 +168,7 @@ class Bootstrap:
         self.gc_res = icrs_res.transform_to(coord.Galactocentric(galcen_distance = gc_sun_dist*u.kpc, galcen_v_sun=v_sun))
         self.gc_res.set_representation_cls(coord.CylindricalRepresentation)
         
-        self.res_v_phi = self.gc_res.d_phi*self.gc_res.rho.to(u.kpc)
+        self.res_v_phi = (self.gc_res.d_phi*self.gc.rho.to(u.kpc)).to(u.km/u.s,equivalencies =u.dimensionless_angles())
                        
         return self.res_v_phi
     
@@ -187,7 +189,7 @@ class Bootstrap:
         self.gc_res = icrs_res.transform_to(coord.Galactocentric(galcen_distance = gc_sun_dist*u.kpc, galcen_v_sun=v_sun))
         self.gc_res.set_representation_cls(coord.CylindricalRepresentation)
         
-        self.res_v_phi = self.gc_res.d_phi*self.gc_res.rho.to(u.kpc)
+        self.res_v_phi = (self.gc_res.d_phi*self.gc_res.rho.to(u.kpc)).to(u.km/u.s,equivalencies =u.dimensionless_angles())
         
         return self.res_v_phi
         
@@ -231,6 +233,10 @@ class Bootstrap:
         if method in ('error','err'):
             
             func = self.bootstrap_err
+            
+        elif method == ('model'):
+            
+            func = self.model_vel
         
         else:
             
@@ -260,6 +266,52 @@ class Bootstrap:
         
         return self.st_dev
     
+    def model_vel(self):
+    
+        wthin = 0.75
+        wthick=0.2
+        whalo = 1.-wthin-wthick
+        
+        thin0 = np.array([0,215,0])
+        thick0 = np.array([0,180,0])
+        halo0 = np.array([0,0,0])
+        
+        thin_disp  = np.array([30,20,17])
+        thick_disp  = np.array([80,60,55])
+        halo_disp = np.array([160,100,100])
+        
+        which = np.random.random_sample(len(self.gc))
+        
+        vel_tot=np.zeros([len(self.gc),3])
+    
+        for j in range(len(self.gc)):
+    
+            if which[j] < wthin :
+                velocity = thin0 + np.random.randn(3)*thin_disp
+            elif which[j] < wthin+wthick :
+                velocity = thick0 + np.random.randn(3)*thick_disp
+            else :
+                velocity = halo0 + np.random.randn(3)*halo_disp
+                
+            vel_tot[j] = velocity
+        
+        vel_tot = vel_tot.transpose()
+        vel_tot[1]=vel_tot[1]/self.gc.rho.to(u.km).value
+        
+        cyl_diff = coord.CylindricalDifferential(d_rho=vel_tot[0]*u.km/u.s,d_phi=vel_tot[1]/u.s,d_z=vel_tot[2]*u.km/u.s)
+        
+        self.gc_res = coord.Galactocentric(representation = coord.CylindricalRepresentation, rho=self.gc.rho,
+                                           phi=self.gc.phi,z=self.gc.z,d_rho=cyl_diff.d_rho.to((u.mas*u.pc)/(u.yr*u.rad),equivalencies=u.dimensionless_angles()),
+                                           d_phi=cyl_diff.d_phi.to(u.mas/u.yr,equivalencies=u.dimensionless_angles()),
+                                           d_z=cyl_diff.d_z.to((u.mas*u.pc)/(u.yr*u.rad),equivalencies=u.dimensionless_angles()),
+                                           galcen_distance = gc_sun_dist*u.kpc, galcen_v_sun=v_sun, differential_cls=coord.CylindricalDifferential)
+        
+        self.icrs_res = self.gc_res.transform_to(coord.ICRS)
+        self.icrs_res.set_representation_cls(coord.SphericalRepresentation,s=coord.SphericalCosLatDifferential)
+        
+        return
+    
+    
     def plot_sample(self,lim,N_bins=None):
         
         if N_bins == None:
@@ -268,7 +320,7 @@ class Bootstrap:
         plt.figure()
         plt.title('$\mathrm{Histogram\ of\ stars\ with\ a\ given\ angular\ velocity\ }v_\phi$',fontdict=font)
         plt.ylabel('$\mathrm{Number\ of\ stars}$', fontdict=font)
-        plt.xlabel('$v_\phi\ /\ \mathrm{mas\ kpc\ yr}^{-1}$', fontdict=font)
+        plt.xlabel('$v_\phi\ /\ \mathrm{km\ s}^{-1}$', fontdict=font)
         
         plt.hist(self.v_phi, bins=N_bins, log=True, range=(-lim,lim),histtype='step',label='Sample')
         
@@ -284,11 +336,11 @@ class Bootstrap:
         plt.figure()
         plt.title('$\mathrm{Histogram\ of\ stars\ with\ a\ given\ angular\ velocity\ }v_\phi$',fontdict=font)
         plt.ylabel('$\mathrm{Number\ of\ stars}$', fontdict=font)
-        plt.xlabel('$v_\phi\ /\ \mathrm{mas\ kpc\ yr}^{-1}$', fontdict=font)
+        plt.xlabel('$v_\phi\ /\ \mathrm{km\ s}^{-1}$', fontdict=font)
         
         plt.hist(self.v_phi.value, bins=N_bins, log=True, range=(-lim,lim),histtype='step',label='Original sample')
 
-        if method == 'random':
+        if method in ('random','rand'):
                 
             func = self.bootstrap_rand
                 
@@ -328,7 +380,7 @@ class Bootstrap:
         plt.figure()
         plt.title('$\mathrm{Histogram\ of\ stars\ with\ a\ given\ angular\ velocity\ }v_\phi$')
         plt.ylabel('$\mathrm{Number\ of\ stars}$')
-        plt.xlabel('$v_\phi\ /\ \mathrm{mas\ kpc\ yr}^{-1}$', fontdict=font)
+        plt.xlabel('$v_\phi\ /\ \mathrm{km\ s}^{-1}$', fontdict=font)
         
         plt.bar(self.bin_vals[:-1], self.bin_heights, width=np.diff(self.bin_vals),color='none',edgecolor='blue', log=True,label='Sample')
         plt.bar(self.bin_vals[:-1], self.mean_sample, width=np.diff(self.bin_vals),color='none', log=True,label='Mean of resample using {} bins'.format(N_bins),edgecolor='orange')#, range=(-lim,lim),histtype='step',label='Mean of resample')
@@ -343,9 +395,32 @@ class Bootstrap:
     def save_mean_data(self,filename):
         
         return ascii.write(self.mean_sample.transpose(), filename,names=self.data_order)
+    
+############ Velocity dispersion model ############
         
+#wthin = 0.75
+#wthick=0.2
+#whalo = 1.-wthin-wthick
+#
+#thin0 = np.array([0,215,0])
+#thick0 = np.array([0,180,0])
+#halo0 = np.array([0,0,0])
+#
+#
+#thin_disp  = np.array([30,20,17])
+#thick_disp  = np.array([80,60,55])
+#halo_disp = np.array([160,100,100])
+#
+#which = np.random.rand()
+#if which < wthin :
+#    velocity = thin0 + np.random.randn(3)*thin_disp
+#elif which < wthin+wthick :
+#    velocity = thick0 + np.random.randn(3)*thick_disp
+#else :
+#    velocity = halo0 + np.random.randn(3)*halo_disp
+#        
 
-############## Tests ##################
+#################### Tests ########################
 
 #cProfile.run('smp.bootstrap_err(e_my_sample)')
         
