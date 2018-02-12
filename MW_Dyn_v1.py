@@ -116,7 +116,7 @@ class Bootstrap:
         
         self.st_dev = None
         
-<<<<<<< HEAD
+
         icrs=coord.ICRS(ra = RA,dec = DEC,distance=self.sample[0]*u.pc,
                         pm_ra_cosdec=self.sample[1]*u.mas/u.yr,
                         pm_dec=self.sample[2]*u.mas/u.yr,
@@ -129,7 +129,7 @@ class Bootstrap:
                         pm_ra_cosdec=self.sample[3]*u.mas/u.yr,
                         pm_dec=self.sample[4]*u.mas/u.yr,
                         radial_velocity=self.sample[5]*u.km/u.s)
->>>>>>> 8831f6ae06718df623bda6598b813d064e3b0fc1
+
 
         self.gc = self.icrs.transform_to(coord.Galactocentric(galcen_distance = gc_sun_dist*u.kpc, galcen_v_sun=v_sun))
         self.gc.set_representation_cls(coord.CylindricalRepresentation)
@@ -349,11 +349,7 @@ class Bootstrap:
         if method in ('random','rand'):
                 
             func = self.bootstrap_rand
-<<<<<<< HEAD
-            
-=======
-                
->>>>>>> 8831f6ae06718df623bda6598b813d064e3b0fc1
+			
         else:
                 
             func = self.bootstrap_err
@@ -369,11 +365,11 @@ class Bootstrap:
         return
         
     
-<<<<<<< HEAD
+
     def plot_mean(self, lim, err=False, N_bins=None, ymax=None,ymin=None):
-=======
+
     def plot_mean(self, lim, err=False, N_bins=None, ymin=None, ymax=None):
->>>>>>> 8831f6ae06718df623bda6598b813d064e3b0fc1
+
         
 
         if any(self.mean_sample) == None:
@@ -404,11 +400,11 @@ class Bootstrap:
         
         plt.bar(self.bin_vals[:-1], self.bin_heights, width=np.diff(self.bin_vals),color='none',edgecolor='blue', log=True,label='Sample')
         plt.bar(self.bin_vals[:-1], self.mean_sample, width=np.diff(self.bin_vals),color='none', log=True,label='Mean of resample using {} bins'.format(N_bins),edgecolor='orange')#, range=(-lim,lim),histtype='step',label='Mean of resample')
-<<<<<<< HEAD
+
         plt.errorbar(self.bin_vals[:-1], self.mean_sample, yerr = err, fmt = 'none', ecolor = 'black', elinewidth=min(np.diff(self.bin_vals))/1.5)
-=======
+
         plt.errorbar(self.bin_vals[:-1], self.mean_sample, yerr=err, fmt='none',ecolor='black', elinewidth=min(np.diff(self.bin_vals))/1.25 )
->>>>>>> 8831f6ae06718df623bda6598b813d064e3b0fc1
+
         plt.xlim(-lim,lim)
         plt.ylim(ymin,ymax)
             
@@ -422,7 +418,7 @@ class Bootstrap:
     
 ############ Velocity dispersion model ############
         
-<<<<<<< HEAD
+
 
 ############## Tests ##################
 =======
@@ -451,7 +447,7 @@ class Bootstrap:
 #################### Tests ########################
 
 #cProfile.run('smp.bootstrap_err(e_my_sample)')
->>>>>>> 8831f6ae06718df623bda6598b813d064e3b0fc1
+
         
 smp = Bootstrap(my_sample,e_my_sample,my_data_order)
 
