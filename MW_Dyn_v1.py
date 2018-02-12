@@ -116,14 +116,6 @@ class Bootstrap:
         
         self.st_dev = None
         
-
-        icrs=coord.ICRS(ra = RA,dec = DEC,distance=self.sample[0]*u.pc,
-                        pm_ra_cosdec=self.sample[1]*u.mas/u.yr,
-                        pm_dec=self.sample[2]*u.mas/u.yr,
-                        radial_velocity=self.sample[3]*u.km/u.s)
-        
-        
-=======
         self.icrs=coord.ICRS(ra = self.sample[0]*u.degree,dec = self.sample[1]*u.degree,
                         distance=self.sample[2]*u.pc,
                         pm_ra_cosdec=self.sample[3]*u.mas/u.yr,
@@ -148,32 +140,38 @@ class Bootstrap:
         
         self.re_bin_heights = None
         
+        self.re_bin_vals = None
+        
         self.bin_vals = None
 
     def bootstrap_err(self):
         
         if any(self.e_sample) == None:
             raise Exception('Uncertainties are needed to perform this action')
-        
-        for i in range(2,len(self.e_sample)):  
             
-            for j in range(len(self.sample_tp)):
+        err = self.e_sample*np.random.uniform(low=-1,high=1,size=(self.e_sample.shape))
+        
+#        for i in range(2,len(self.e_sample)):  
+#            
+#            for j in range(len(self.sample_tp)):
+#                
+#                err = self.e_sample[i][j]
+#                
+#                n_deci = len(str(err).split('.')[1]) 
+#                
+#                rand_err = round(random.uniform(-err,err),n_deci)
+#                
+#                self.resample[i][j] = self.sample[i][j]+rand_err
+        
+        self.resample = self.sample + err
                 
-                err = self.e_sample[i][j]
-                
-                n_deci = len(str(err).split('.')[1]) 
-                
-                rand_err = round(random.uniform(-err,err),n_deci)
-                
-                self.resample[i][j] = self.sample[i][j]+rand_err
-                
-        icrs_res=coord.ICRS(ra = self.sample[0]*u.degree,dec = self.sample[1]*u.degree,
+        self.icrs_res=coord.ICRS(ra = self.sample[0]*u.degree,dec = self.sample[1]*u.degree,
                             distance=self.resample[2]*u.pc,
                             pm_ra_cosdec=self.resample[3]*u.mas/u.yr,
                             pm_dec=self.resample[4]*u.mas/u.yr,
                             radial_velocity=self.resample[5]*u.km/u.s)
 
-        self.gc_res = icrs_res.transform_to(coord.Galactocentric(galcen_distance = gc_sun_dist*u.kpc, galcen_v_sun=v_sun))
+        self.gc_res = self.icrs_res.transform_to(coord.Galactocentric(galcen_distance = gc_sun_dist*u.kpc, galcen_v_sun=v_sun))
         self.gc_res.set_representation_cls(coord.CylindricalRepresentation)
         
         self.res_v_phi = (self.gc_res.d_phi*self.gc.rho.to(u.kpc)).to(u.km/u.s,equivalencies =u.dimensionless_angles())
@@ -188,13 +186,13 @@ class Bootstrap:
             
         self.resample = self.resample_tp.transpose()
             
-        icrs_res=coord.ICRS(ra = self.resample[0]*u.degree,dec = self.resample[1]*u.degree,
+        self.icrs_res=coord.ICRS(ra = self.resample[0]*u.degree,dec = self.resample[1]*u.degree,
                             distance=self.resample[2]*u.pc,
                             pm_ra_cosdec=self.resample[3]*u.mas/u.yr,
                             pm_dec=self.resample[4]*u.mas/u.yr,
                             radial_velocity=self.resample[5]*u.km/u.s)
 
-        self.gc_res = icrs_res.transform_to(coord.Galactocentric(galcen_distance = gc_sun_dist*u.kpc, galcen_v_sun=v_sun))
+        self.gc_res = self.icrs_res.transform_to(coord.Galactocentric(galcen_distance = gc_sun_dist*u.kpc, galcen_v_sun=v_sun))
         self.gc_res.set_representation_cls(coord.CylindricalRepresentation)
         
         self.res_v_phi = (self.gc_res.d_phi*self.gc_res.rho.to(u.kpc)).to(u.km/u.s,equivalencies =u.dimensionless_angles())
@@ -239,26 +237,37 @@ class Bootstrap:
         if method in ('error','err'):
             
             func = self.bootstrap_err
+        
+        elif method in ('random','rand'):
             
-        elif method == ('model'):
-            
-            func = self.model_vel
+            func = self.bootstrap_rand
         
         else:
             
-            func = self.bootstrap_rand
+            func = self.model_vel
+            
+            self.bin_vals = 100
             
         for i in range(N):
             
-            self.re_bin_heights, bin_vals = np.histogram(func(), bins=self.bin_vals)
+            if i == N/2:
+                print('Resampling 50 % done')
+            
+            self.re_bin_heights, self.re_bin_vals = np.histogram(func(), bins=self.bin_vals)
             
             self.v_phis[i] = self.re_bin_heights
 
             s+=self.re_bin_heights
+        
+        print('Resampling done')
             
         s = s/N
             
         for i in range(N_bins):
+            
+            if i == N_bins/2:
+                
+                print('50 % done computing sigma')
             
             for j in range(N):
                 
@@ -315,7 +324,22 @@ class Bootstrap:
         self.icrs_res = self.gc_res.transform_to(coord.ICRS)
         self.icrs_res.set_representation_cls(coord.SphericalRepresentation,s=coord.SphericalCosLatDifferential)
         
-        return
+        err = self.e_sample*np.random.uniform(low=-1,high=1,size=(self.e_sample.shape))
+        
+        self.resample = array([self.icrs_res.ra,self.icrs_res.dec,self.icrs_res.distance,self.icrs_res.pm_ra_cosdec,self.icrs_res.pm_dec,self.icrs_res.radial_velocity]) + err
+                
+        self.icrs_res = coord.ICRS(ra = self.resample[0]*u.degree,dec = self.resample[1]*u.degree,
+                            distance=self.resample[2]*u.pc,
+                            pm_ra_cosdec=self.resample[3]*u.mas/u.yr,
+                            pm_dec=self.resample[4]*u.mas/u.yr,
+                            radial_velocity=self.resample[5]*u.km/u.s)
+        
+        self.gc_res = self.icrs_res.transform_to(coord.Galactocentric(galcen_distance = gc_sun_dist*u.kpc, galcen_v_sun=v_sun))
+        self.gc_res.set_representation_cls(coord.CylindricalRepresentation)
+        
+        self.res_v_phi = (self.gc_res.d_phi*self.gc.rho.to(u.kpc)).to(u.km/u.s,equivalencies =u.dimensionless_angles())
+        
+        return self.res_v_phi
     
     
     def plot_sample(self,lim,N_bins=None):
@@ -349,6 +373,9 @@ class Bootstrap:
         if method in ('random','rand'):
                 
             func = self.bootstrap_rand
+        elif method in ('model','mod'):
+            
+            func = self.model_vel
 			
         else:
                 
@@ -363,24 +390,15 @@ class Bootstrap:
         plt.legend()
         
         return
-        
-    
 
-    def plot_mean(self, lim, err=False, N_bins=None, ymax=None,ymin=None):
-
-    def plot_mean(self, lim, err=False, N_bins=None, ymin=None, ymax=None):
-
-        
+    def plot_mean(self, lim, err=False, N_bins=None, ymax=None,ymin=None, model=False):        
 
         if any(self.mean_sample) == None:
             raise Exception('You need to compute a mean using your method of choice before plotting')
             
-        if ymax == None:
-            ymax = 100000
-            
-        if ymin == None:
-            ymin = 1
-        
+        if any(self.bin_vals)==None:
+            self.bin_heights, self.bin_vals = np.histogram(self.v_phi, bins=N_bins)
+
         if ymax == None:
             ymax = 100000
         
@@ -398,30 +416,44 @@ class Bootstrap:
         plt.ylabel('$\mathrm{Number\ of\ stars}$')
         plt.xlabel('$v_\phi\ /\ \mathrm{km\ s}^{-1}$', fontdict=font)
         
-        plt.bar(self.bin_vals[:-1], self.bin_heights, width=np.diff(self.bin_vals),color='none',edgecolor='blue', log=True,label='Sample')
-        plt.bar(self.bin_vals[:-1], self.mean_sample, width=np.diff(self.bin_vals),color='none', log=True,label='Mean of resample using {} bins'.format(N_bins),edgecolor='orange')#, range=(-lim,lim),histtype='step',label='Mean of resample')
-
-        plt.errorbar(self.bin_vals[:-1], self.mean_sample, yerr = err, fmt = 'none', ecolor = 'black', elinewidth=min(np.diff(self.bin_vals))/1.5)
-
-        plt.errorbar(self.bin_vals[:-1], self.mean_sample, yerr=err, fmt='none',ecolor='black', elinewidth=min(np.diff(self.bin_vals))/1.25 )
-
-        plt.xlim(-lim,lim)
-        plt.ylim(ymin,ymax)
+        if model == True:
             
+            plt.bar(self.re_bin_vals[:-1], self.mean_sample,width=np.diff(self.re_bin_vals),color='none', log=True,label='Mean of modeled $v_\phi$ using {} bins'.format(N_bins),edgecolor='red')
+            
+            plt.errorbar(self.re_bin_vals[:-1], self.mean_sample, yerr=err, fmt='none',ecolor='black', elinewidth=min(np.diff(self.re_bin_vals))/6 )
+
+            plt.xlim(-lim,lim)
+            plt.ylim(ymin,ymax)
+            
+            return
            
         plt.legend()
+        
+        plt.bar(self.bin_vals[:-1], self.bin_heights, width=np.diff(self.bin_vals),color='none',edgecolor='blue', log=True,label='Sample')
+        plt.bar(self.bin_vals[:-1], self.mean_sample, width=np.diff(self.bin_vals),color='none', log=True,label='Mean of resample using {} bins'.format(N_bins),edgecolor='orange')
+
+        plt.errorbar(self.bin_vals[:-1], self.mean_sample, yerr = err, fmt = 'none', ecolor = 'black', elinewidth=min(np.diff(self.bin_vals))/6)
+
+
         return
         
     def save_mean_data(self,filename):
         
-        return ascii.write(self.mean_sample.transpose(), filename,names=self.data_order)
+        return ascii.write([self.mean_sample,self.st_dev], filename+'.txt',names=['v_phi','sigma'])
     
 ############ Velocity dispersion model ############
         
-
+#smp.model_vel()
+#v_phi = smp.gc_res.d_phi*smp.gc_res.rho.to(u.kpc)
+#
+#v_phi = v_phi.to(u.km/u.s,equivalencies=u.dimensionless_angles())
+#
+#plt.figure()       
+#plt.hist(v_phi.value, log=True, bins=100, range=(-400,400))
+#plt.ylim(1,100000)
 
 ############## Tests ##################
-=======
+
 #wthin = 0.75
 #wthick=0.2
 #whalo = 1.-wthin-wthick
