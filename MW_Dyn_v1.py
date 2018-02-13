@@ -91,6 +91,8 @@ class Bootstrap:
         bootstrap_rand: creates a random resample of angular velocities from the original sample
         bootstrap_mean: computes the mean of N resamples from bootstrap_err or bootstrap_mean.
         get_st_dev: computes the standard deviation for N resamples in every bin for either the 'error' or 'rand' method
+        model_vel: creates a pseudosample from a velocity model for each coordinate in self.sample, 
+                then adds a random uncertainty within given range for each coordinate.
         plot_sample: plots the original sample in a histogram
         plot_resample: plots N resamples computed using a given method within a given v_phi limit
         plot_mean: plots the computed mean that is stored in self.mean_sample
@@ -224,7 +226,7 @@ class Bootstrap:
         return self.mean_sample
     
     
-    def get_st_dev(self, N_bins, N, method):
+    def get_st_dev(self, N_bins, N, method):#, dip=False, dip_lim=None):
         
         self.v_phis = np.zeros([N,N_bins])
         
@@ -281,7 +283,10 @@ class Bootstrap:
         
         return self.st_dev
     
-    def model_vel(self):
+    def model_vel(self):#, dip=False, dip_lim=None):
+    
+        dip=False
+        dip_lim=0
     
         wthin = 0.75
         wthick=0.2
@@ -307,6 +312,9 @@ class Bootstrap:
                 velocity = thick0 + np.random.randn(3)*thick_disp
             else :
                 velocity = halo0 + np.random.randn(3)*halo_disp
+                
+            if dip==True and abs(velocity[1])<=dip_lim:
+                velocity[1]=0
                 
             vel_tot[j] = velocity
         
@@ -424,6 +432,7 @@ class Bootstrap:
 
             plt.xlim(-lim,lim)
             plt.ylim(ymin,ymax)
+            plt.legend()
             
             return
            
