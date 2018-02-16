@@ -42,11 +42,11 @@ try:
 except NameError:
     bad_rows=[]
     
-    for i in range(len(flag_list)):
+    for i in flag_list:
         
-        for j in range(len(data[flag_list[i]])):
+        for j in range(len(data[i])):
             
-            if data['flag_any'][j]==1:
+            if data[i][j]==1 and j not in bad_rows:
                 bad_rows.append(j)
             
 data.remove_rows(bad_rows)
@@ -74,10 +74,10 @@ my_sample = np.array([RA, DEC, dist, pm_RA, pm_DEC, rad_vel])
 
 e_my_sample = np.array([e_RA, e_DEC, e_dist, e_pm_RA, e_pm_DEC, e_rad_vel])
 
-class Bootstrap:
+class MW_dyn:
     
     
-    """The bootstrap class which holds a sample and can perform statistical tests through bootstrapping. 
+    """The MW_dyn class which holds a sample of Milky Way stars and can perform statistical tests.. 
     
     Takes the args:
         
@@ -151,7 +151,7 @@ class Bootstrap:
         if any(self.e_sample) == None:
             raise Exception('Uncertainties are needed to perform this action')
             
-        err = self.e_sample*np.random.uniform(low=-1,high=1,size=(self.e_sample.shape))
+        err = self.e_sample*np.random.randn(self.e_sample.shape[0],self.e_sample.shape[1])
         
 #        for i in range(2,len(self.e_sample)):  
 #            
@@ -232,6 +232,8 @@ class Bootstrap:
         
         s = np.zeros(N_bins)
         
+        k = np.zeros(N_bins+1)
+        
         var = np.zeros(N_bins)
         
         self.bin_heights, self.bin_vals = np.histogram(self.v_phi, bins=N_bins)
@@ -244,38 +246,44 @@ class Bootstrap:
             
             func = self.bootstrap_rand
         
-        else:
+        elif method in ('model','mod'):
             
             func = self.model_vel
             
-            self.bin_vals = 100
+            self.bin_vals = N_bins
             
         for i in range(N):
             
+            if i == N/4:
+                print('Resampling 25 % done')
+            
             if i == N/2:
                 print('Resampling 50 % done')
+            
+            if i == (3*N)/4:
+                print('Resampling 75 % done')
             
             self.re_bin_heights, self.re_bin_vals = np.histogram(func(), bins=self.bin_vals)
             
             self.v_phis[i] = self.re_bin_heights
 
             s+=self.re_bin_heights
-        
-        print('Resampling done')
+            
+            k+=self.re_bin_vals
             
         s = s/N
+        
+        k=s/N
             
         for i in range(N_bins):
-            
-            if i == N_bins/2:
-                
-                print('50 % done computing sigma')
             
             for j in range(N):
                 
                 var[i] += (self.v_phis[j][i] - s[i])**2
             
         self.mean_sample = s
+        
+        self.re_bin_vals = k
     
         st_dev = sqrt(var/N)
         
@@ -286,7 +294,7 @@ class Bootstrap:
     def model_vel(self):#, dip=False, dip_lim=None):
     
         dip=False
-        dip_lim=0
+        dip_lim=10
     
         wthin = 0.75
         wthick=0.2
@@ -314,7 +322,10 @@ class Bootstrap:
                 velocity = halo0 + np.random.randn(3)*halo_disp
                 
             if dip==True and abs(velocity[1])<=dip_lim:
-                velocity[1]=0
+                if velocity[1]<=0:
+                    velocity[1]-=dip_lim
+                if velocity[1]>=0:
+                    velocity[1]+=dip_lim               
                 
             vel_tot[j] = velocity
         
@@ -332,7 +343,7 @@ class Bootstrap:
         self.icrs_res = self.gc_res.transform_to(coord.ICRS)
         self.icrs_res.set_representation_cls(coord.SphericalRepresentation,s=coord.SphericalCosLatDifferential)
         
-        err = self.e_sample*np.random.uniform(low=-1,high=1,size=(self.e_sample.shape))
+        err = self.e_sample*np.random.randn(self.e_sample.shape[0],self.e_sample.shape[1])
         
         self.resample = array([self.icrs_res.ra,self.icrs_res.dec,self.icrs_res.distance,self.icrs_res.pm_ra_cosdec,self.icrs_res.pm_dec,self.icrs_res.radial_velocity]) + err
                 
@@ -375,12 +386,14 @@ class Bootstrap:
         plt.title('$\mathrm{Histogram\ of\ stars\ with\ a\ given\ angular\ velocity\ }v_\phi$',fontdict=font)
         plt.ylabel('$\mathrm{Number\ of\ stars}$', fontdict=font)
         plt.xlabel('$v_\phi\ /\ \mathrm{km\ s}^{-1}$', fontdict=font)
-        
-        plt.hist(self.v_phi.value, bins=N_bins, log=True, range=(-lim,lim),histtype='step',label='Original sample')
 
         if method in ('random','rand'):
                 
             func = self.bootstrap_rand
+            
+            plt.hist(self.v_phi.value, bins=N_bins, log=True, range=(-lim,lim),histtype='step',label='Original sample')
+            plt.legend()
+            
         elif method in ('model','mod'):
             
             func = self.model_vel
@@ -388,15 +401,15 @@ class Bootstrap:
         else:
                 
             func = self.bootstrap_err
+            plt.hist(self.v_phi.value, bins=N_bins, log=True, range=(-lim,lim),histtype='step',label='Original sample')
+            plt.legend()
 
         for i in range(N):
     
             func()
         
             plt.hist(self.res_v_phi, bins=N_bins, log=True, range=(-lim,lim),histtype='step')
-    
-        plt.legend()
-        
+
         return
 
     def plot_mean(self, lim, err=False, N_bins=None, ymax=None,ymin=None, model=False):        
@@ -404,7 +417,10 @@ class Bootstrap:
         if any(self.mean_sample) == None:
             raise Exception('You need to compute a mean using your method of choice before plotting')
             
-        if any(self.bin_vals)==None:
+        if N_bins == None:
+            N_bins = len(self.mean_sample)
+
+        if any(self.bin_vals) == None:
             self.bin_heights, self.bin_vals = np.histogram(self.v_phi, bins=N_bins)
 
         if ymax == None:
@@ -412,9 +428,6 @@ class Bootstrap:
         
         if ymin == None:
             ymin = 1
-            
-        if N_bins == None:
-            N_bins = len(self.mean_sample)            
     
         if err is True:
             err = self.st_dev
@@ -423,6 +436,8 @@ class Bootstrap:
         plt.title('$\mathrm{Histogram\ of\ stars\ with\ a\ given\ angular\ velocity\ }v_\phi$')
         plt.ylabel('$\mathrm{Number\ of\ stars}$')
         plt.xlabel('$v_\phi\ /\ \mathrm{km\ s}^{-1}$', fontdict=font)
+        plt.xlim(-lim,lim)
+        plt.ylim(ymin,ymax)
         
         if model == True:
             
@@ -430,19 +445,17 @@ class Bootstrap:
             
             plt.errorbar(self.re_bin_vals[:-1], self.mean_sample, yerr=err, fmt='none',ecolor='black', elinewidth=min(np.diff(self.re_bin_vals))/6 )
 
-            plt.xlim(-lim,lim)
-            plt.ylim(ymin,ymax)
+
             plt.legend()
             
             return
-           
-        plt.legend()
         
         plt.bar(self.bin_vals[:-1], self.bin_heights, width=np.diff(self.bin_vals),color='none',edgecolor='blue', log=True,label='Sample')
         plt.bar(self.bin_vals[:-1], self.mean_sample, width=np.diff(self.bin_vals),color='none', log=True,label='Mean of resample using {} bins'.format(N_bins),edgecolor='orange')
 
         plt.errorbar(self.bin_vals[:-1], self.mean_sample, yerr = err, fmt = 'none', ecolor = 'black', elinewidth=min(np.diff(self.bin_vals))/6)
 
+        plt.legend()
 
         return
         
@@ -490,7 +503,7 @@ class Bootstrap:
 #cProfile.run('smp.bootstrap_err(e_my_sample)')
 
         
-smp = Bootstrap(my_sample,e_my_sample,my_data_order)
+smp = MW_dyn(my_sample,e_my_sample,my_data_order)
 
 #cProfile.run('smp.get_st_dev(100,10,str(rand))')
 
