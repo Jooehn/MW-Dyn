@@ -250,7 +250,7 @@ class MW_dyn:
             
             func = self.model_vel
             
-            self.bin_vals = N_bins
+            dummy, self.bin_vals = np.histogram(func(), bins=N_bins)
             
         for i in range(N):
             
@@ -272,8 +272,6 @@ class MW_dyn:
             k+=self.re_bin_vals
             
         s = s/N
-        
-        k=s/N
             
         for i in range(N_bins):
             
@@ -282,8 +280,6 @@ class MW_dyn:
                 var[i] += (self.v_phis[j][i] - s[i])**2
             
         self.mean_sample = s
-        
-        self.re_bin_vals = k
     
         st_dev = sqrt(var/N)
         
@@ -293,8 +289,8 @@ class MW_dyn:
     
     def model_vel(self):#, dip=False, dip_lim=None):
     
-        dip=False
-        dip_lim=10
+        dip=True
+        dip_lim=20
     
         wthin = 0.75
         wthick=0.2
