@@ -12,11 +12,13 @@ import cProfile
 
 ############## Initialiser ##################
 
-gc_sun_dist = 8.20
+gc_sun_dist = 8.20*u.kpc
+
+gp_z_sun = 15*u.pc
 
 v_rot = 232.8
 
-v_sun = coord.CartesianDifferential((11.1,v_rot,7.25), unit=u.km/u.s)
+v_sun = coord.CartesianDifferential((11.1,12.24+v_rot,7.25), unit=u.km/u.s)
 
 font = {'family': 'serif',
         'color':  'black',
@@ -35,7 +37,7 @@ data = Table(data_raw, copy=True)
 
 """flag_list should contain the flags that are to be removed from the data if raised"""
 
-flag_list = ['flag_any']
+flag_list = ['flag_dup']
 
 try:
     bad_rows
@@ -90,7 +92,7 @@ class MW_dyn:
         bootstrap_err: implements bootstrapping for uncertainties. Returns a resampling of the original sample
         bootstrap_rand: creates a random resample of angular velocities from the original sample
         bootstrap_mean: computes the mean of N resamples from bootstrap_err or bootstrap_mean.
-        get_st_dev: computes the standard deviation for N resamples in every bin for either the 'error' or 'rand' method
+        get_st_dev: computes the standard deviation for N resamples in every bin for either the 'error', 'rand' or 'model' method
         model_vel: creates a pseudosample from a velocity model for each coordinate in self.sample, 
                 then adds a random uncertainty within given range for each coordinate.
         plot_sample: plots the original sample in a histogram
@@ -125,7 +127,7 @@ class MW_dyn:
                         radial_velocity=self.sample[5]*u.km/u.s)
 
 
-        self.gc = self.icrs.transform_to(coord.Galactocentric(galcen_distance = gc_sun_dist*u.kpc, galcen_v_sun=v_sun))
+        self.gc = self.icrs.transform_to(coord.Galactocentric(galcen_distance = gc_sun_dist, galcen_v_sun=v_sun, z_sun=gp_z_sun))
         self.gc.set_representation_cls(coord.CylindricalRepresentation)
 
         self.icrs_res=None
@@ -167,13 +169,13 @@ class MW_dyn:
         
         self.resample = self.sample + err
                 
-        self.icrs_res=coord.ICRS(ra = self.sample[0]*u.degree,dec = self.sample[1]*u.degree,
+        self.icrs_res=coord.ICRS(ra = self.resample[0]*u.degree,dec = self.resample[1]*u.degree,
                             distance=self.resample[2]*u.pc,
                             pm_ra_cosdec=self.resample[3]*u.mas/u.yr,
                             pm_dec=self.resample[4]*u.mas/u.yr,
                             radial_velocity=self.resample[5]*u.km/u.s)
 
-        self.gc_res = self.icrs_res.transform_to(coord.Galactocentric(galcen_distance = gc_sun_dist*u.kpc, galcen_v_sun=v_sun))
+        self.gc_res = self.icrs_res.transform_to(coord.Galactocentric(galcen_distance = gc_sun_dist, galcen_v_sun=v_sun, z_sun=gp_z_sun))
         self.gc_res.set_representation_cls(coord.CylindricalRepresentation)
         
         self.res_v_phi = (self.gc_res.d_phi*self.gc.rho.to(u.kpc)).to(u.km/u.s,equivalencies =u.dimensionless_angles())
@@ -194,7 +196,7 @@ class MW_dyn:
                             pm_dec=self.resample[4]*u.mas/u.yr,
                             radial_velocity=self.resample[5]*u.km/u.s)
 
-        self.gc_res = self.icrs_res.transform_to(coord.Galactocentric(galcen_distance = gc_sun_dist*u.kpc, galcen_v_sun=v_sun))
+        self.gc_res = self.icrs_res.transform_to(coord.Galactocentric(galcen_distance = gc_sun_dist, galcen_v_sun=v_sun, z_sun=gp_z_sun))
         self.gc_res.set_representation_cls(coord.CylindricalRepresentation)
         
         self.res_v_phi = (self.gc_res.d_phi*self.gc_res.rho.to(u.kpc)).to(u.km/u.s,equivalencies =u.dimensionless_angles())
@@ -232,8 +234,6 @@ class MW_dyn:
         
         s = np.zeros(N_bins)
         
-        k = np.zeros(N_bins+1)
-        
         var = np.zeros(N_bins)
         
         self.bin_heights, self.bin_vals = np.histogram(self.v_phi, bins=N_bins)
@@ -252,6 +252,9 @@ class MW_dyn:
             
             dummy, self.bin_vals = np.histogram(func(), bins=N_bins)
             
+        else:
+            raise Exception('Not a valid method')
+            
         for i in range(N):
             
             if i == N/4:
@@ -268,8 +271,6 @@ class MW_dyn:
             self.v_phis[i] = self.re_bin_heights
 
             s+=self.re_bin_heights
-            
-            k+=self.re_bin_vals
             
         s = s/N
             
@@ -289,9 +290,8 @@ class MW_dyn:
     
     def model_vel(self):#, dip=False, dip_lim=None):
     
-        dip=True
-        dip_lim=20
-    
+        dip=False
+        dip_lim=5
         wthin = 0.75
         wthick=0.2
         whalo = 1.-wthin-wthick
@@ -334,7 +334,7 @@ class MW_dyn:
                                            phi=self.gc.phi,z=self.gc.z,d_rho=cyl_diff.d_rho.to((u.mas*u.pc)/(u.yr*u.rad),equivalencies=u.dimensionless_angles()),
                                            d_phi=cyl_diff.d_phi.to(u.mas/u.yr,equivalencies=u.dimensionless_angles()),
                                            d_z=cyl_diff.d_z.to((u.mas*u.pc)/(u.yr*u.rad),equivalencies=u.dimensionless_angles()),
-                                           galcen_distance = gc_sun_dist*u.kpc, galcen_v_sun=v_sun, differential_cls=coord.CylindricalDifferential)
+                                           galcen_distance = gc_sun_dist, galcen_v_sun=v_sun, z_sun=gp_z_sun, differential_cls=coord.CylindricalDifferential)
         
         self.icrs_res = self.gc_res.transform_to(coord.ICRS)
         self.icrs_res.set_representation_cls(coord.SphericalRepresentation,s=coord.SphericalCosLatDifferential)
@@ -349,7 +349,7 @@ class MW_dyn:
                             pm_dec=self.resample[4]*u.mas/u.yr,
                             radial_velocity=self.resample[5]*u.km/u.s)
         
-        self.gc_res = self.icrs_res.transform_to(coord.Galactocentric(galcen_distance = gc_sun_dist*u.kpc, galcen_v_sun=v_sun))
+        self.gc_res = self.icrs_res.transform_to(coord.Galactocentric(galcen_distance = gc_sun_dist, galcen_v_sun=v_sun, z_sun=gp_z_sun))
         self.gc_res.set_representation_cls(coord.CylindricalRepresentation)
         
         self.res_v_phi = (self.gc_res.d_phi*self.gc.rho.to(u.kpc)).to(u.km/u.s,equivalencies =u.dimensionless_angles())
@@ -363,11 +363,11 @@ class MW_dyn:
             N_bins = 'auto'
         
         plt.figure()
-        plt.title('$\mathrm{Histogram\ of\ stars\ with\ a\ given\ angular\ velocity\ }v_\phi$',fontdict=font)
+#        plt.title('$\mathrm{Histogram\ of\ stars\ with\ a\ given\ angular\ velocity\ }v_\phi$',fontdict=font)
         plt.ylabel('$\mathrm{Number\ of\ stars}$', fontdict=font)
         plt.xlabel('$v_\phi\ /\ \mathrm{km\ s}^{-1}$', fontdict=font)
         
-        plt.hist(self.v_phi, bins=N_bins, log=True, range=(-lim,lim),histtype='step',label='Sample')
+        plt.hist(self.v_phi, bins=N_bins, log=True, range=(-lim,lim),histtype='step',label='$TGAS\ \&\ RAVE\ data')
         
         plt.legend()
         return 
@@ -379,7 +379,7 @@ class MW_dyn:
             N_bins = 'auto'
         
         plt.figure()
-        plt.title('$\mathrm{Histogram\ of\ stars\ with\ a\ given\ angular\ velocity\ }v_\phi$',fontdict=font)
+#        plt.title('$\mathrm{Histogram\ of\ stars\ with\ a\ given\ angular\ velocity\ }v_\phi$',fontdict=font)
         plt.ylabel('$\mathrm{Number\ of\ stars}$', fontdict=font)
         plt.xlabel('$v_\phi\ /\ \mathrm{km\ s}^{-1}$', fontdict=font)
 
@@ -429,7 +429,7 @@ class MW_dyn:
             err = self.st_dev
             
         plt.figure()
-        plt.title('$\mathrm{Histogram\ of\ stars\ with\ a\ given\ angular\ velocity\ }v_\phi$')
+#        plt.title('$\mathrm{Histogram\ of\ stars\ with\ a\ given\ angular\ velocity\ }v_\phi$')
         plt.ylabel('$\mathrm{Number\ of\ stars}$')
         plt.xlabel('$v_\phi\ /\ \mathrm{km\ s}^{-1}$', fontdict=font)
         plt.xlim(-lim,lim)
