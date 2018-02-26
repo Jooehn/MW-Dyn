@@ -79,7 +79,7 @@ e_my_sample = np.array([e_RA, e_DEC, e_dist, e_pm_RA, e_pm_DEC, e_rad_vel])
 class MW_dyn:
     
     
-    """The MW_dyn class which holds a sample of Milky Way stars and can perform statistical tests.. 
+    """The MW_dyn class which holds a sample of Milky Way stars and can perform statistical tests. 
     
     Takes the args:
         
@@ -154,18 +154,6 @@ class MW_dyn:
             raise Exception('Uncertainties are needed to perform this action')
             
         err = self.e_sample*np.random.randn(self.e_sample.shape[0],self.e_sample.shape[1])
-        
-#        for i in range(2,len(self.e_sample)):  
-#            
-#            for j in range(len(self.sample_tp)):
-#                
-#                err = self.e_sample[i][j]
-#                
-#                n_deci = len(str(err).split('.')[1]) 
-#                
-#                rand_err = round(random.uniform(-err,err),n_deci)
-#                
-#                self.resample[i][j] = self.sample[i][j]+rand_err
         
         self.resample = self.sample + err
                 
@@ -367,7 +355,8 @@ class MW_dyn:
         plt.ylabel('$\mathrm{Number\ of\ stars}$', fontdict=font)
         plt.xlabel('$v_\phi\ /\ \mathrm{km\ s}^{-1}$', fontdict=font)
         
-        plt.hist(self.v_phi, bins=N_bins, log=True, range=(-lim,lim),histtype='step',label='$TGAS\ \&\ RAVE\ data')
+        self.bin_heights, self.bin_vals = np.histogram(self.v_phi, bins=N_bins)
+        plt.bar(self.bin_vals[:-1], self.bin_heights, width=np.diff(self.bin_vals),color='none',edgecolor='blue', log=True,label='$TGAS\ & \ RAVE\ data$')
         
         plt.legend()
         return 
@@ -458,41 +447,7 @@ class MW_dyn:
     def save_mean_data(self,filename):
         
         return ascii.write([self.mean_sample,self.st_dev], filename+'.txt',names=['v_phi','sigma'])
-    
-############ Velocity dispersion model ############
-        
-#smp.model_vel()
-#v_phi = smp.gc_res.d_phi*smp.gc_res.rho.to(u.kpc)
-#
-#v_phi = v_phi.to(u.km/u.s,equivalencies=u.dimensionless_angles())
-#
-#plt.figure()       
-#plt.hist(v_phi.value, log=True, bins=100, range=(-400,400))
-#plt.ylim(1,100000)
 
-############## Tests ##################
-
-#wthin = 0.75
-#wthick=0.2
-#whalo = 1.-wthin-wthick
-#
-#thin0 = np.array([0,215,0])
-#thick0 = np.array([0,180,0])
-#halo0 = np.array([0,0,0])
-#
-#
-#thin_disp  = np.array([30,20,17])
-#thick_disp  = np.array([80,60,55])
-#halo_disp = np.array([160,100,100])
-#
-#which = np.random.rand()
-#if which < wthin :
-#    velocity = thin0 + np.random.randn(3)*thin_disp
-#elif which < wthin+wthick :
-#    velocity = thick0 + np.random.randn(3)*thick_disp
-#else :
-#    velocity = halo0 + np.random.randn(3)*halo_disp
-#        
 
 #################### Tests ########################
 
@@ -510,15 +465,3 @@ smp = MW_dyn(my_sample,e_my_sample,my_data_order)
 """2. Making a histogram with 100 bins of original sample and 5 resamples using bootstrap_err. Takes ~30 s!"""
 
 #smp.plot_resamples(5, 'error', 14, N_bins=100)
-
-"""3. Computing the mean for 10 iterations of bootstrap_rand using 100 bins and plots the result."""
-
-#smp.bootstrap_mean(10)
-#
-#smp.plot_mean(10)
-
-"""4. Computing the mean for 5 iterations of bootstrap_err and plots the result"""
-
-#smp.bootstrap_mean(5)
-#
-#smp.plot_mean(14,100)
