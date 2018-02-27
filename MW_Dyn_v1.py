@@ -197,17 +197,17 @@ class MW_dyn:
         
         if method == 'rand':
             
-            func = bootstrap.rand().value
+            func = self.bootstrap_rand
             
         else:
             
-            func = bootstrap.err().value
+            func = self.bootstrap_err
             
         for i in range(N):
             
             self.bin_heights, self.bin_vals = np.histogram(self.v_phi, bins=N_bins)
             
-            self.re_bin_heights, bin_vals = np.histogram(func, bins=self.bin_vals)
+            self.re_bin_heights, bin_vals = np.histogram(func(), bins=self.bin_vals)
             
             s += self.re_bin_heights
             
@@ -279,7 +279,7 @@ class MW_dyn:
     def model_vel(self):#, dip=False, dip_lim=None):
     
         dip=False
-        dip_lim=5
+        dip_lim=50
         wthin = 0.75
         wthick=0.2
         whalo = 1.-wthin-wthick
@@ -352,8 +352,8 @@ class MW_dyn:
         
         plt.figure()
 #        plt.title('$\mathrm{Histogram\ of\ stars\ with\ a\ given\ angular\ velocity\ }v_\phi$',fontdict=font)
-        plt.ylabel('$\mathrm{Number\ of\ stars}$', fontdict=font)
-        plt.xlabel('$v_\phi\ /\ \mathrm{km\ s}^{-1}$', fontdict=font)
+        plt.ylabel('$\mathrm{Number\ of\ stars}$')
+        plt.xlabel('$v_\phi\ \ [\mathrm{km\ s}^{-1}$]')
         
         self.bin_heights, self.bin_vals = np.histogram(self.v_phi, bins=N_bins)
         plt.bar(self.bin_vals[:-1], self.bin_heights, width=np.diff(self.bin_vals),color='none',edgecolor='blue', log=True,label='$TGAS\ & \ RAVE\ data$')
@@ -370,13 +370,13 @@ class MW_dyn:
         plt.figure()
 #        plt.title('$\mathrm{Histogram\ of\ stars\ with\ a\ given\ angular\ velocity\ }v_\phi$',fontdict=font)
         plt.ylabel('$\mathrm{Number\ of\ stars}$', fontdict=font)
-        plt.xlabel('$v_\phi\ /\ \mathrm{km\ s}^{-1}$', fontdict=font)
+        plt.xlabel('$v_\phi\ \ [\mathrm{km\ s}^{-1}$]', fontdict=font)
 
         if method in ('random','rand'):
                 
             func = self.bootstrap_rand
             
-            plt.hist(self.v_phi.value, bins=N_bins, log=True, range=(-lim,lim),histtype='step',label='Original sample')
+            plt.hist(self.v_phi.value, bins=N_bins, log=True, range=(-lim,lim),histtype='step',label='$TGAS\ & \ RAVE\ data$')
             plt.legend()
             
         elif method in ('model','mod'):
@@ -386,7 +386,7 @@ class MW_dyn:
         else:
                 
             func = self.bootstrap_err
-            plt.hist(self.v_phi.value, bins=N_bins, log=True, range=(-lim,lim),histtype='step',label='Original sample')
+            plt.hist(self.v_phi.value, bins=N_bins, log=True, range=(-lim,lim),histtype='step',label='$TGAS\ & \ RAVE\ data$')
             plt.legend()
 
         for i in range(N):
@@ -420,7 +420,7 @@ class MW_dyn:
         plt.figure()
 #        plt.title('$\mathrm{Histogram\ of\ stars\ with\ a\ given\ angular\ velocity\ }v_\phi$')
         plt.ylabel('$\mathrm{Number\ of\ stars}$')
-        plt.xlabel('$v_\phi\ /\ \mathrm{km\ s}^{-1}$', fontdict=font)
+        plt.xlabel('$v_\phi\ \ [\mathrm{km\ s}^{-1}$]', fontdict=font)
         plt.xlim(-lim,lim)
         plt.ylim(ymin,ymax)
         
@@ -435,7 +435,7 @@ class MW_dyn:
             
             return
         
-        plt.bar(self.bin_vals[:-1], self.bin_heights, width=np.diff(self.bin_vals),color='none',edgecolor='blue', log=True,label='Sample')
+        plt.bar(self.bin_vals[:-1], self.bin_heights, width=np.diff(self.bin_vals),color='none',edgecolor='blue', log=True,label='TGAS & RAVE data')
         plt.bar(self.bin_vals[:-1], self.mean_sample, width=np.diff(self.bin_vals),color='none', log=True,label='Mean of resample using {} bins'.format(N_bins),edgecolor='orange')
 
         plt.errorbar(self.bin_vals[:-1], self.mean_sample, yerr = err, fmt = 'none', ecolor = 'black', elinewidth=min(np.diff(self.bin_vals))/6)
