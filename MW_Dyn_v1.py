@@ -6,6 +6,7 @@ import astropy.coordinates as coord
 import random
 from astropy.io import ascii
 from astropy.table import Table
+from astropy.constants import G
 
 import cProfile
 
@@ -37,7 +38,7 @@ data = Table(data_raw, copy=True)
 
 """flag_list should contain the flags that are to be removed from the data if raised"""
 
-flag_list = ['flag_dup']
+flag_list = ['flag_any']
 
 try:
     bad_rows
@@ -59,6 +60,7 @@ dist = data['distance']*u.pc
 pm_RA = data['pmRA_TGAS']*u.mas/u.yr
 pm_DEC = data['pmDE_TGAS']*u.mas/u.yr
 rad_vel = data['HRV']*u.km/u.s
+mass = data['mass']*u.Msun
 
 e_RA = np.zeros(len(data))*u.degree
 e_DEC = np.zeros(len(data))*u.degree
@@ -66,15 +68,16 @@ e_dist = data['edistance']*u.pc
 e_pm_RA = data['pmRA_error_TGAS']*u.mas/u.yr
 e_pm_DEC = data['pmDE_error_TGAS']*u.mas/u.yr
 e_rad_vel = data['eHRV']*u.km/u.s
+e_mass = data['e_mass']*u.Msun
 
 
 ############## Bootstrapper ##################
 
-my_data_order=['RA', 'DEC', 'dist', 'pm_RA', 'pm_DEC', 'rad_vel']
+my_data_order=['RA', 'DEC', 'dist', 'pm_RA', 'pm_DEC', 'rad_vel','mass']
 
-my_sample = np.array([RA, DEC, dist, pm_RA, pm_DEC, rad_vel])
+my_sample = np.array([RA, DEC, dist, pm_RA, pm_DEC, rad_vel, mass])
 
-e_my_sample = np.array([e_RA, e_DEC, e_dist, e_pm_RA, e_pm_DEC, e_rad_vel])
+e_my_sample = np.array([e_RA, e_DEC, e_dist, e_pm_RA, e_pm_DEC, e_rad_vel, e_mass])
 
 class MW_dyn:
     
@@ -129,6 +132,12 @@ class MW_dyn:
 
         self.gc = self.icrs.transform_to(coord.Galactocentric(galcen_distance = gc_sun_dist, galcen_v_sun=v_sun, z_sun=gp_z_sun))
         self.gc.set_representation_cls(coord.CylindricalRepresentation)
+        
+        self.mass = self.sample[6]*u.Msun
+        
+        self.ang_mom = np.zeros(len(self.sample))
+        
+        self.energy = np.zeros(len(self.sample))
 
         self.icrs_res=None
         
@@ -278,7 +287,7 @@ class MW_dyn:
     
     def model_vel(self):#, dip=False, dip_lim=None):
     
-        dip=False
+        dip=True
         dip_lim=50
         wthin = 0.75
         wthick=0.2
@@ -344,6 +353,29 @@ class MW_dyn:
         
         return self.res_v_phi
     
+    def get_ang_mom(self):
+        
+        self.ang_mom = self.gc.rho.to(u.kpc)*self.v_phi*self.mass
+        
+        return self.ang_mom
+        
+    def get_energy(self):
+        
+        v_halo = 173.2*(u.km/u.s)
+        d_halo = 15*u.kpc
+        
+        a_d = 6.5*u.kpc
+        b_d = 0.26*u.kpc
+        M_disc = 6.3*10**(10)*u.Msun
+        
+        M_bulge = 2.1*10**(10)*u.Msun
+        c_b = 0.7*u.kpc
+        
+        E_halo = v_halo**2*np.log(1+self.gc.rho**2/d_halo**2+self.gc.z**2/d_halo**2)
+        
+        E_disc = - ()/np.sqrt()
+    
+        E_bulge = 
     
     def plot_sample(self,lim,N_bins=None):
         
