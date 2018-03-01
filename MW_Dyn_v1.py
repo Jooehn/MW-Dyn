@@ -38,7 +38,7 @@ data = Table(data_raw, copy=True)
 
 """flag_list should contain the flags that are to be removed from the data if raised"""
 
-flag_list = ['flag_any']
+flag_list = ['flag_dup']
 
 try:
     bad_rows
@@ -142,6 +142,10 @@ class MW_dyn:
         self.icrs_res=None
         
         self.v_phi = (self.gc.d_phi*self.gc.rho.to(u.kpc)).to(u.km/u.s,equivalencies =u.dimensionless_angles())
+        
+        self.v_rho = self.gc.d_rho.to(u.km/u.s)
+        
+        self.v_z = self.gc.d_z.to(u.km/u.s)
         
         self.v_phis = None
         
@@ -287,14 +291,14 @@ class MW_dyn:
     
     def model_vel(self):#, dip=False, dip_lim=None):
     
-        dip=True
+        dip=False
         dip_lim=50
         wthin = 0.75
         wthick=0.2
         whalo = 1.-wthin-wthick
         
-        thin0 = np.array([0,215,0])
-        thick0 = np.array([0,180,0])
+        thin0 = np.array([0,-215,0])
+        thick0 = np.array([0,-180,0])
         halo0 = np.array([0,0,0])
         
         thin_disp  = np.array([30,20,17])
@@ -338,7 +342,7 @@ class MW_dyn:
         
         err = self.e_sample*np.random.randn(self.e_sample.shape[0],self.e_sample.shape[1])
         
-        self.resample = array([self.icrs_res.ra,self.icrs_res.dec,self.icrs_res.distance,self.icrs_res.pm_ra_cosdec,self.icrs_res.pm_dec,self.icrs_res.radial_velocity]) + err
+        self.resample = array([self.icrs_res.ra,self.icrs_res.dec,self.icrs_res.distance,self.icrs_res.pm_ra_cosdec,self.icrs_res.pm_dec,self.icrs_res.radial_velocity]) + err[:-1]
                 
         self.icrs_res = coord.ICRS(ra = self.resample[0]*u.degree,dec = self.resample[1]*u.degree,
                             distance=self.resample[2]*u.pc,
@@ -355,27 +359,39 @@ class MW_dyn:
     
     def get_ang_mom(self):
         
-        self.ang_mom = self.gc.rho.to(u.kpc)*self.v_phi*self.mass
+        self.ang_mom = self.gc.rho.to(u.kpc)*self.v_phi
         
         return self.ang_mom
         
     def get_energy(self):
         
+        """To do: Introduce cuts of metallicity and distance from GC to obtain set of halo stars"""
+        
         v_halo = 173.2*(u.km/u.s)
-        d_halo = 15*u.kpc
+        d_halo = 12*u.kpc
         
         a_d = 6.5*u.kpc
         b_d = 0.26*u.kpc
-        M_disc = 6.3*10**(10)*u.Msun
+        M_disc = 6.3e10*u.Msun
         
-        M_bulge = 2.1*10**(10)*u.Msun
+        M_bulge = 2.1e10*u.Msun
         c_b = 0.7*u.kpc
         
-        E_halo = v_halo**2*np.log(1+self.gc.rho**2/d_halo**2+self.gc.z**2/d_halo**2)
+        rho = self.gc.rho.to(u.kpc)
+        z = self.gc.z.to(u.kpc)
+        r = np.sqrt(rho**2+z**2)
         
-        E_disc = - ()/np.sqrt()
+        E_halo = v_halo**2*np.log(1+rho**2/d_halo**2+z**2/d_halo**2)
+        
+        E_disc = - (G*M_disc)/np.sqrt(rho**2+(a_d+np.sqrt(z**2+b_d**2))**2)
     
-        E_bulge = 
+        E_bulge = - (G*M_bulge)/(r+c_b)
+        
+        E_kin = (self.v_rho**2+self.v_phi**2+self.v_z**2)/2
+    
+        self.energy = E_halo+E_disc+E_bulge+E_kin
+        
+        return self.energy
     
     def plot_sample(self,lim,N_bins=None):
         
@@ -475,6 +491,17 @@ class MW_dyn:
         plt.legend()
 
         return
+    
+    def plot_E_L(self):
+        
+        ang_mom = self.get_ang_mom()
+        
+        energy = self.get_energy()*10**(-5)
+        
+#        plt.figure()
+        plt.xlabel('$L_z$ [km s$^{-1}$ kpc M$_\odot$]')
+        plt.ylabel('Energy [$10^5$ km$^2$ s$^{-2}$]')
+        plt.scatter(ang_mom, energy, s=0.75, c='none', edgecolors='blue')
         
     def save_mean_data(self,filename):
         
