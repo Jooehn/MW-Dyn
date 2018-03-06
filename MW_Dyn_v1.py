@@ -38,7 +38,7 @@ data = Table(data_raw, copy=True)
 
 """flag_list should contain the flags that are to be removed from the data if raised"""
 
-flag_list = ['flag_dup']
+flag_list = ['flag_any']
 
 try:
     bad_rows
@@ -61,6 +61,7 @@ pm_RA = data['pmRA_TGAS']*u.mas/u.yr
 pm_DEC = data['pmDE_TGAS']*u.mas/u.yr
 rad_vel = data['HRV']*u.km/u.s
 mass = data['mass']*u.Msun
+met = data['Met_N_K']*u.dex
 
 e_RA = np.zeros(len(data))*u.degree
 e_DEC = np.zeros(len(data))*u.degree
@@ -69,15 +70,16 @@ e_pm_RA = data['pmRA_error_TGAS']*u.mas/u.yr
 e_pm_DEC = data['pmDE_error_TGAS']*u.mas/u.yr
 e_rad_vel = data['eHRV']*u.km/u.s
 e_mass = data['e_mass']*u.Msun
+e_met = data['eMet_K']*u.dex
 
 
 ############## Bootstrapper ##################
 
-my_data_order=['RA', 'DEC', 'dist', 'pm_RA', 'pm_DEC', 'rad_vel','mass']
+my_data_order=['RA', 'DEC', 'dist', 'pm_RA', 'pm_DEC', 'rad_vel','mass','metallicity']
 
-my_sample = np.array([RA, DEC, dist, pm_RA, pm_DEC, rad_vel, mass])
+my_sample = np.array([RA, DEC, dist, pm_RA, pm_DEC, rad_vel, mass, met])
 
-e_my_sample = np.array([e_RA, e_DEC, e_dist, e_pm_RA, e_pm_DEC, e_rad_vel, e_mass])
+e_my_sample = np.array([e_RA, e_DEC, e_dist, e_pm_RA, e_pm_DEC, e_rad_vel, e_mass, e_met])
 
 class MW_dyn:
     
@@ -138,8 +140,12 @@ class MW_dyn:
         self.ang_mom = np.zeros(len(self.sample))
         
         self.energy = np.zeros(len(self.sample))
+        
+        self.met = self.sample[7]*u.dex
 
-        self.icrs_res=None
+        self.halo = None
+
+        self.icrs_res = None
         
         self.v_phi = (self.gc.d_phi*self.gc.rho.to(u.kpc)).to(u.km/u.s,equivalencies =u.dimensionless_angles())
         
@@ -229,15 +235,17 @@ class MW_dyn:
         return self.mean_sample
     
     
-    def get_st_dev(self, N_bins, N, method):#, dip=False, dip_lim=None):
+    def get_st_dev(self, binwidth, N, method):
+        
+        self.bin_heights, self.bin_vals = np.histogram(self.v_phi, bins=np.arange(min(self.v_phi.value),max(self.v_phi.value)+binwidth,binwidth))
+        
+        N_bins = len(self.bin_vals[:-1])
         
         self.v_phis = np.zeros([N,N_bins])
         
         s = np.zeros(N_bins)
         
         var = np.zeros(N_bins)
-        
-        self.bin_heights, self.bin_vals = np.histogram(self.v_phi, bins=N_bins)
         
         if method in ('error','err'):
             
@@ -251,7 +259,15 @@ class MW_dyn:
             
             func = self.model_vel
             
-            dummy, self.bin_vals = np.histogram(func(), bins=N_bins)
+            dummy, self.bin_vals = np.histogram(func(), bins=np.arange(min(self.res_v_phi.value),max(self.res_v_phi.value)+binwidth,binwidth))
+            
+            N_bins = len(self.bin_vals[:-1])
+            
+            self.v_phis = np.zeros([N,N_bins])
+        
+            s = np.zeros(N_bins)
+        
+            var = np.zeros(N_bins)
             
         else:
             raise Exception('Not a valid method')
@@ -289,7 +305,7 @@ class MW_dyn:
         
         return self.st_dev
     
-    def model_vel(self):#, dip=False, dip_lim=None):
+    def model_vel(self):
     
         dip=False
         dip_lim=50
@@ -342,7 +358,7 @@ class MW_dyn:
         
         err = self.e_sample*np.random.randn(self.e_sample.shape[0],self.e_sample.shape[1])
         
-        self.resample = array([self.icrs_res.ra,self.icrs_res.dec,self.icrs_res.distance,self.icrs_res.pm_ra_cosdec,self.icrs_res.pm_dec,self.icrs_res.radial_velocity]) + err[:-1]
+        self.resample = array([self.icrs_res.ra,self.icrs_res.dec,self.icrs_res.distance,self.icrs_res.pm_ra_cosdec,self.icrs_res.pm_dec,self.icrs_res.radial_velocity]) + err[:-2]
                 
         self.icrs_res = coord.ICRS(ra = self.resample[0]*u.degree,dec = self.resample[1]*u.degree,
                             distance=self.resample[2]*u.pc,
@@ -357,13 +373,19 @@ class MW_dyn:
         
         return self.res_v_phi
     
-    def get_ang_mom(self):
+    def get_ang_mom(self, halo=False):
+        
+        if halo==True:
+            
+            self.ang_mom = self.gc_res.rho.to(u.kpc)*self.res_v_phi
+            
+            return self.ang_mom
         
         self.ang_mom = self.gc.rho.to(u.kpc)*self.v_phi
         
         return self.ang_mom
         
-    def get_energy(self):
+    def get_energy(self,halo=False):
         
         """To do: Introduce cuts of metallicity and distance from GC to obtain set of halo stars"""
         
@@ -377,8 +399,30 @@ class MW_dyn:
         M_bulge = 2.1e10*u.Msun
         c_b = 0.7*u.kpc
         
-        rho = self.gc.rho.to(u.kpc)
-        z = self.gc.z.to(u.kpc)
+        if halo==True:
+            
+            rho = self.gc_res.rho.to(u.kpc)
+            
+            z = self.gc_res.z.to(u.kpc)
+            
+            v_phi = (self.gc_res.d_phi*self.gc_res.rho.to(u.kpc)).to(u.km/u.s,equivalencies =u.dimensionless_angles())
+            
+            v_rho = self.gc_res.d_rho.to(u.km/u.s)
+            
+            v_z = self.gc_res.d_z.to(u.km/u.s)
+            
+        else:
+            
+            rho = self.gc.rho.to(u.kpc)
+            
+            z = self.gc.z.to(u.kpc)
+            
+            v_phi = self.v_phi
+            
+            v_rho = self.v_rho
+            
+            v_z = self.v_z
+            
         r = np.sqrt(rho**2+z**2)
         
         E_halo = v_halo**2*np.log(1+rho**2/d_halo**2+z**2/d_halo**2)
@@ -387,11 +431,40 @@ class MW_dyn:
     
         E_bulge = - (G*M_bulge)/(r+c_b)
         
-        E_kin = (self.v_rho**2+self.v_phi**2+self.v_z**2)/2
+        E_kin = (v_rho**2+v_phi**2+v_z**2)/2
     
         self.energy = E_halo+E_disc+E_bulge+E_kin
         
         return self.energy
+    
+    def get_halo(self):
+  
+        halo_dist = 100
+          
+        for i in range(len(self.sample_tp)):
+        
+            if self.met[i].value<=-1.5 and smp.icrs.distance[i].value>=halo_dist:
+                try:
+                    halo
+                except NameError:
+                    halo = self.sample_tp[i]
+                    pass
+                halo = np.vstack((halo,self.sample_tp[i]))  
+       
+        self.halo = halo.transpose()
+        
+        self.icrs_res=coord.ICRS(ra = self.halo[0]*u.degree,dec = self.halo[1]*u.degree,
+                            distance = self.halo[2]*u.pc,
+                            pm_ra_cosdec = self.halo[3]*u.mas/u.yr,
+                            pm_dec = self.halo[4]*u.mas/u.yr,
+                            radial_velocity = self.halo[5]*u.km/u.s)
+
+        self.gc_res = self.icrs_res.transform_to(coord.Galactocentric(galcen_distance = gc_sun_dist, galcen_v_sun=v_sun, z_sun=gp_z_sun))
+        self.gc_res.set_representation_cls(coord.CylindricalRepresentation)
+        
+        self.res_v_phi = (self.gc_res.d_phi*self.gc_res.rho.to(u.kpc)).to(u.km/u.s,equivalencies =u.dimensionless_angles())
+        
+        return
     
     def plot_sample(self,lim,N_bins=None):
         
@@ -454,7 +527,7 @@ class MW_dyn:
             N_bins = len(self.mean_sample)
 
         if any(self.bin_vals) == None:
-            self.bin_heights, self.bin_vals = np.histogram(self.v_phi, bins=N_bins)
+            self.bin_heights, self.bin_vals = np.histogram(self.v_phi, bins=np.arange(min(self.v_phi.value),max(self.v_phi.value)+binwidth,binwidth))
 
         if ymax == None:
             ymax = 100000
@@ -483,6 +556,8 @@ class MW_dyn:
             
             return
         
+        ####Change labels for the legends to include binwidth#####
+        
         plt.bar(self.bin_vals[:-1], self.bin_heights, width=np.diff(self.bin_vals),color='none',edgecolor='blue', log=True,label='TGAS & RAVE data')
         plt.bar(self.bin_vals[:-1], self.mean_sample, width=np.diff(self.bin_vals),color='none', log=True,label='Mean of resample using {} bins'.format(N_bins),edgecolor='orange')
 
@@ -492,16 +567,26 @@ class MW_dyn:
 
         return
     
-    def plot_E_L(self):
+    def plot_E_L(self, halo=False):
         
-        ang_mom = self.get_ang_mom()
+        if halo==True:
+            
+            self.get_halo()
+            
+            ang_mom = self.get_ang_mom(halo=True)
+            
+            energy = self.get_energy(halo=True)*10**(-5)
+            
+        else:
+            
+            ang_mom = self.get_ang_mom()
+            
+            energy = self.get_energy()*10**(-5)
         
-        energy = self.get_energy()*10**(-5)
-        
-#        plt.figure()
-        plt.xlabel('$L_z$ [km s$^{-1}$ kpc M$_\odot$]')
+        plt.figure()
+        plt.xlabel('$L_z$ [km s$^{-1}$ kpc]')
         plt.ylabel('Energy [$10^5$ km$^2$ s$^{-2}$]')
-        plt.scatter(ang_mom, energy, s=0.75, c='none', edgecolors='blue')
+        plt.scatter(ang_mom, energy, s=2, c='none', edgecolors='blue')
         
     def save_mean_data(self,filename):
         
@@ -524,3 +609,20 @@ smp = MW_dyn(my_sample,e_my_sample,my_data_order)
 """2. Making a histogram with 100 bins of original sample and 5 resamples using bootstrap_err. Takes ~30 s!"""
 
 #smp.plot_resamples(5, 'error', 14, N_bins=100)
+
+#halo_dist = 100
+#  
+#for i in range(len(smp.sample_tp)):
+#
+#    try:
+#        if float(Fe[i])<=-1.5:# and smp.icrs.distance[i].value>=halo_dist:
+#            try:
+#                halo
+#            except NameError:
+#                halo = smp.sample_tp[i]
+#                pass
+#            halo = np.vstack((halo,smp.sample_tp[i]))  
+#    except ValueError:
+#            continue
+#
+#halo = halo.transpose()
