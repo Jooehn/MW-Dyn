@@ -38,7 +38,7 @@ data = Table(data_raw, copy=True)
 
 """flag_list should contain the flags that are to be removed from the data if raised"""
 
-flag_list = ['flag_any']
+flag_list = ['flag_dup']
 
 try:
     bad_rows
@@ -259,15 +259,15 @@ class MW_dyn:
             
             func = self.model_vel
             
-            dummy, self.bin_vals = np.histogram(func(), bins=np.arange(min(self.res_v_phi.value),max(self.res_v_phi.value)+binwidth,binwidth))
+#            dummy, self.bin_vals = np.histogram(func(), bins=np.arange(min(self.v_phi.value),max(self.v_phi.value)+binwidth,binwidth))
             
-            N_bins = len(self.bin_vals[:-1])
-            
-            self.v_phis = np.zeros([N,N_bins])
-        
-            s = np.zeros(N_bins)
-        
-            var = np.zeros(N_bins)
+#            N_bins = len(self.bin_vals[:-1])
+#            
+#            self.v_phis = np.zeros([N,N_bins])
+#        
+#            s = np.zeros(N_bins)
+#        
+#            var = np.zeros(N_bins)
             
         else:
             raise Exception('Not a valid method')
@@ -307,8 +307,8 @@ class MW_dyn:
     
     def model_vel(self):
     
-        dip=False
-        dip_lim=50
+        dip=True
+        dip_lim=15
         wthin = 0.75
         wthick=0.2
         whalo = 1.-wthin-wthick
@@ -466,27 +466,24 @@ class MW_dyn:
         
         return
     
-    def plot_sample(self,lim,N_bins=None):
-        
-        if N_bins == None:
-            N_bins = 'auto'
-        
+    def plot_sample(self,lim,binwidth):
+
         plt.figure()
 #        plt.title('$\mathrm{Histogram\ of\ stars\ with\ a\ given\ angular\ velocity\ }v_\phi$',fontdict=font)
         plt.ylabel('$\mathrm{Number\ of\ stars}$')
         plt.xlabel('$v_\phi\ \ [\mathrm{km\ s}^{-1}$]')
         
-        self.bin_heights, self.bin_vals = np.histogram(self.v_phi, bins=N_bins)
+        self.bin_heights, self.bin_vals = np.histogram(self.v_phi, bins=np.arange(min(self.v_phi.value),max(self.v_phi.value)+binwidth,binwidth))
         plt.bar(self.bin_vals[:-1], self.bin_heights, width=np.diff(self.bin_vals),color='none',edgecolor='blue', log=True,label='$TGAS\ & \ RAVE\ data$')
         
         plt.legend()
         return 
     
-    def plot_resamples(self, N, method, lim, N_bins=None ):
+    def plot_resamples(self, N, method, lim, binwidth ):
         
         
-        if N_bins == None:
-            N_bins = 'auto'
+        if binwidth == None:
+            binwidth = 15
         
         plt.figure()
 #        plt.title('$\mathrm{Histogram\ of\ stars\ with\ a\ given\ angular\ velocity\ }v_\phi$',fontdict=font)
@@ -497,7 +494,7 @@ class MW_dyn:
                 
             func = self.bootstrap_rand
             
-            plt.hist(self.v_phi.value, bins=N_bins, log=True, range=(-lim,lim),histtype='step',label='$TGAS\ & \ RAVE\ data$')
+            plt.hist(self.v_phi.value, bins=np.arange(min(self.res_v_phi.value),max(self.res_v_phi.value)+binwidth,binwidth), log=True, range=(-lim,lim),histtype='step',label='$TGAS\ & \ RAVE\ data$')
             plt.legend()
             
         elif method in ('model','mod'):
@@ -507,24 +504,21 @@ class MW_dyn:
         else:
                 
             func = self.bootstrap_err
-            plt.hist(self.v_phi.value, bins=N_bins, log=True, range=(-lim,lim),histtype='step',label='$TGAS\ & \ RAVE\ data$')
+            plt.hist(self.v_phi.value, bins=np.arange(min(self.res_v_phi.value),max(self.res_v_phi.value)+binwidth,binwidth), log=True, range=(-lim,lim),histtype='step',label='$TGAS\ & \ RAVE\ data$')
             plt.legend()
 
         for i in range(N):
     
             func()
         
-            plt.hist(self.res_v_phi, bins=N_bins, log=True, range=(-lim,lim),histtype='step')
+            plt.hist(self.res_v_phi, bins=np.arange(min(self.res_v_phi.value),max(self.res_v_phi.value)+binwidth,binwidth), log=True, range=(-lim,lim),histtype='step')
 
         return
 
-    def plot_mean(self, lim, err=False, N_bins=None, ymax=None,ymin=None, model=False):        
+    def plot_mean(self, lim, binwidth=None, err=False, ymax=None,ymin=None, model=False):        
 
         if any(self.mean_sample) == None:
             raise Exception('You need to compute a mean using your method of choice before plotting')
-            
-        if N_bins == None:
-            N_bins = len(self.mean_sample)
 
         if any(self.bin_vals) == None:
             self.bin_heights, self.bin_vals = np.histogram(self.v_phi, bins=np.arange(min(self.v_phi.value),max(self.v_phi.value)+binwidth,binwidth))
@@ -547,9 +541,9 @@ class MW_dyn:
         
         if model == True:
             
-            plt.bar(self.re_bin_vals[:-1], self.mean_sample,width=np.diff(self.re_bin_vals),color='none', log=True,label='Mean of modeled $v_\phi$ using {} bins'.format(N_bins),edgecolor='red')
+            plt.bar(self.bin_vals[:-1], self.mean_sample,width=np.diff(self.bin_vals),color='none', log=True,label='Mean of modeled $v_\phi$',edgecolor='red')
             
-            plt.errorbar(self.re_bin_vals[:-1], self.mean_sample, yerr=err, fmt='none',ecolor='black', elinewidth=min(np.diff(self.re_bin_vals))/6 )
+            plt.errorbar(self.bin_vals[:-1], self.mean_sample, yerr=err, fmt='none',ecolor='black', elinewidth=min(np.diff(self.bin_vals))/6 )
 
 
             plt.legend()
@@ -559,7 +553,7 @@ class MW_dyn:
         ####Change labels for the legends to include binwidth#####
         
         plt.bar(self.bin_vals[:-1], self.bin_heights, width=np.diff(self.bin_vals),color='none',edgecolor='blue', log=True,label='TGAS & RAVE data')
-        plt.bar(self.bin_vals[:-1], self.mean_sample, width=np.diff(self.bin_vals),color='none', log=True,label='Mean of resample using {} bins'.format(N_bins),edgecolor='orange')
+        plt.bar(self.bin_vals[:-1], self.mean_sample, width=np.diff(self.bin_vals),color='none', log=True,label='Mean of bootstrap samples',edgecolor='orange')
 
         plt.errorbar(self.bin_vals[:-1], self.mean_sample, yerr = err, fmt = 'none', ecolor = 'black', elinewidth=min(np.diff(self.bin_vals))/6)
 
