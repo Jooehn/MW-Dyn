@@ -89,14 +89,14 @@ class MW_dyn:
     Takes the args:
         
         sample: The data sample at hand. Needs to be converted from Tablet to a set of arrays
-        e_sample: Errors in the sample quantities if any. Required to use Bootstrap.bootstrap_err. Should be same shape as sample
+        e_sample: Errors in the sample quantities if any. Required to use Bootstrap.error_sampling. Should be same shape as sample
         data_order: Just a conventient way to see the order of quantities in sample. Not needed to initialise
         
     Functions:
         
-        bootstrap_err: implements bootstrapping for uncertainties. Returns a resampling of the original sample
-        bootstrap_rand: creates a random resample of angular velocities from the original sample
-        bootstrap_mean: computes the mean of N resamples from bootstrap_err or bootstrap_mean.
+        error_sampling: implements bootstrapping for uncertainties. Returns a resampling of the original sample
+        bootstrap: creates a random resample of angular velocities from the original sample
+        bootstrap_mean: computes the mean of N resamples from error_sampling or bootstrap_mean.
         get_st_dev: computes the standard deviation for N resamples in every bin for either the 'error', 'rand' or 'model' method
         model_vel: creates a pseudosample from a velocity model for each coordinate in self.sample, 
                 then adds a random uncertainty within given range for each coordinate.
@@ -167,7 +167,7 @@ class MW_dyn:
         
         self.bin_vals = None
 
-    def bootstrap_err(self):
+    def error_sampling(self):
         
         if any(self.e_sample) == None:
             raise Exception('Uncertainties are needed to perform this action')
@@ -189,7 +189,7 @@ class MW_dyn:
                        
         return self.res_v_phi
     
-    def bootstrap_rand(self):
+    def bootstrap(self):
         
         for i in range(len(self.sample_tp)):
             
@@ -214,13 +214,13 @@ class MW_dyn:
         
         s = np.zeros([N_bins])
         
-        if method == 'rand':
+        if method in ('error','err'):
             
-            func = self.bootstrap_rand
+            func = self.bootstrap
             
         else:
             
-            func = self.bootstrap_err
+            func = self.error_sampling
             
         for i in range(N):
             
@@ -249,25 +249,15 @@ class MW_dyn:
         
         if method in ('error','err'):
             
-            func = self.bootstrap_err
+            func = self.error_sampling
         
-        elif method in ('random','rand'):
+        elif method in ('bootstrap','boot'):
             
-            func = self.bootstrap_rand
+            func = self.bootstrap
         
         elif method in ('model','mod'):
             
             func = self.model_vel
-            
-#            dummy, self.bin_vals = np.histogram(func(), bins=np.arange(min(self.v_phi.value),max(self.v_phi.value)+binwidth,binwidth))
-            
-#            N_bins = len(self.bin_vals[:-1])
-#            
-#            self.v_phis = np.zeros([N,N_bins])
-#        
-#            s = np.zeros(N_bins)
-#        
-#            var = np.zeros(N_bins)
             
         else:
             raise Exception('Not a valid method')
@@ -289,8 +279,10 @@ class MW_dyn:
 
             s+=self.re_bin_heights
             
-        s = s/N
+        print('Resampling 100 % done')
             
+        s = s/N
+
         for i in range(N_bins):
             
             for j in range(N):
@@ -308,7 +300,7 @@ class MW_dyn:
     def model_vel(self):
     
         dip=True
-        dip_lim=15
+        dip_lim=10
         wthin = 0.75
         wthick=0.2
         whalo = 1.-wthin-wthick
@@ -377,17 +369,15 @@ class MW_dyn:
         
         if halo==True:
             
-            self.ang_mom = self.gc_res.rho.to(u.kpc)*self.res_v_phi
+            self.ang_mom = -self.gc_res.rho.to(u.kpc)*self.res_v_phi
             
             return self.ang_mom
         
-        self.ang_mom = self.gc.rho.to(u.kpc)*self.v_phi
+        self.ang_mom = -self.gc.rho.to(u.kpc)*self.v_phi
         
         return self.ang_mom
         
     def get_energy(self,halo=False):
-        
-        """To do: Introduce cuts of metallicity and distance from GC to obtain set of halo stars"""
         
         v_halo = 173.2*(u.km/u.s)
         d_halo = 12*u.kpc
@@ -433,13 +423,19 @@ class MW_dyn:
         
         E_kin = (v_rho**2+v_phi**2+v_z**2)/2
     
-        self.energy = E_halo+E_disc+E_bulge+E_kin
+        self.energy = E_halo+E_disc+E_bulge+E_kin-1.7e5*(u.km**2/u.s**2)
         
         return self.energy
     
-    def get_halo(self):
+    def get_halo(self,model=False):
   
         halo_dist = 100
+        
+        k=1
+        
+        if model==True:
+            
+            k=float(input('By which factor should we scale the distance? '))
           
         for i in range(len(self.sample_tp)):
         
@@ -454,7 +450,7 @@ class MW_dyn:
         self.halo = halo.transpose()
         
         self.icrs_res=coord.ICRS(ra = self.halo[0]*u.degree,dec = self.halo[1]*u.degree,
-                            distance = self.halo[2]*u.pc,
+                            distance = k*self.halo[2]*u.pc,
                             pm_ra_cosdec = self.halo[3]*u.mas/u.yr,
                             pm_dec = self.halo[4]*u.mas/u.yr,
                             radial_velocity = self.halo[5]*u.km/u.s)
@@ -490,9 +486,9 @@ class MW_dyn:
         plt.ylabel('$\mathrm{Number\ of\ stars}$', fontdict=font)
         plt.xlabel('$v_\phi\ \ [\mathrm{km\ s}^{-1}$]', fontdict=font)
 
-        if method in ('random','rand'):
+        if method in ('bootstrap','boot'):
                 
-            func = self.bootstrap_rand
+            func = self.bootstrap
             
             plt.hist(self.v_phi.value, bins=np.arange(min(self.res_v_phi.value),max(self.res_v_phi.value)+binwidth,binwidth), log=True, range=(-lim,lim),histtype='step',label='$TGAS\ & \ RAVE\ data$')
             plt.legend()
@@ -503,7 +499,7 @@ class MW_dyn:
 			
         else:
                 
-            func = self.bootstrap_err
+            func = self.error_sampling
             plt.hist(self.v_phi.value, bins=np.arange(min(self.res_v_phi.value),max(self.res_v_phi.value)+binwidth,binwidth), log=True, range=(-lim,lim),histtype='step',label='$TGAS\ & \ RAVE\ data$')
             plt.legend()
 
@@ -515,7 +511,7 @@ class MW_dyn:
 
         return
 
-    def plot_mean(self, lim, binwidth=None, err=False, ymax=None,ymin=None, model=False):        
+    def plot_mean(self, lim, method, binwidth=None, err=False, ymax=None,ymin=None, model=False):        
 
         if any(self.mean_sample) == None:
             raise Exception('You need to compute a mean using your method of choice before plotting')
@@ -541,9 +537,9 @@ class MW_dyn:
         
         if model == True:
             
-            plt.bar(self.bin_vals[:-1], self.mean_sample,width=np.diff(self.bin_vals),color='none', log=True,label='Mean of modeled $v_\phi$',edgecolor='red')
+            plt.bar(self.bin_vals[:-1], self.mean_sample,width=np.diff(self.bin_vals),color='none', log=True,label='Mean of $v_\phi$ from model',edgecolor='red')
             
-            plt.errorbar(self.bin_vals[:-1], self.mean_sample, yerr=err, fmt='none',ecolor='black', elinewidth=min(np.diff(self.bin_vals))/6 )
+            plt.errorbar(self.bin_vals[:-1], self.mean_sample, yerr=err, fmt='none',ecolor='black', elinewidth=min(np.diff(self.bin_vals))/5 )
 
 
             plt.legend()
@@ -552,24 +548,30 @@ class MW_dyn:
         
         ####Change labels for the legends to include binwidth#####
         
-        plt.bar(self.bin_vals[:-1], self.bin_heights, width=np.diff(self.bin_vals),color='none',edgecolor='blue', log=True,label='TGAS & RAVE data')
-        plt.bar(self.bin_vals[:-1], self.mean_sample, width=np.diff(self.bin_vals),color='none', log=True,label='Mean of bootstrap samples',edgecolor='orange')
+        plt.bar(self.bin_vals[:-1], self.bin_heights, width=np.diff(self.bin_vals),color='grey',edgecolor='grey', log=True,label='TGAS & RAVE data',lw=1.6)
+        plt.bar(self.bin_vals[:-1], self.mean_sample, width=np.diff(self.bin_vals),color='none', log=True,label='Mean of {} sampling'.format(method),edgecolor='b',lw=1.6)
 
-        plt.errorbar(self.bin_vals[:-1], self.mean_sample, yerr = err, fmt = 'none', ecolor = 'black', elinewidth=min(np.diff(self.bin_vals))/6)
-
+        plt.errorbar(self.bin_vals[:-1], self.mean_sample, yerr = err, fmt = 'none', ecolor = 'black', elinewidth=min(np.diff(self.bin_vals))/5)
+        plt.tight_layout()
         plt.legend()
 
         return
     
-    def plot_E_L(self, halo=False):
+    def plot_E_L(self, halo=False,model=False):
         
         if halo==True:
             
-            self.get_halo()
+            if model==True:
+
+                self.get_halo(True)
+                
+            else:
+                
+                self.get_halo()
+                
+            ang_mom = self.get_ang_mom(halo)
             
-            ang_mom = self.get_ang_mom(halo=True)
-            
-            energy = self.get_energy(halo=True)*10**(-5)
+            energy = self.get_energy(halo)*10**(-5)
             
         else:
             
@@ -580,7 +582,10 @@ class MW_dyn:
         plt.figure()
         plt.xlabel('$L_z$ [km s$^{-1}$ kpc]')
         plt.ylabel('Energy [$10^5$ km$^2$ s$^{-2}$]')
+        plt.xlim(-4500,4500)
+        plt.ylim(-2.1,0.2)
         plt.scatter(ang_mom, energy, s=2, c='none', edgecolors='blue')
+        plt.tight_layout()
         
     def save_mean_data(self,filename):
         
@@ -589,18 +594,38 @@ class MW_dyn:
 
 #################### Tests ########################
 
-#cProfile.run('smp.bootstrap_err(e_my_sample)')
+#cProfile.run('smp.error_sampling(e_my_sample)')
 
         
 smp = MW_dyn(my_sample,e_my_sample,my_data_order)
 
+bin_width=[10]
+
+N=1000
+
+method=['error']
+
+
+def produce_plots():
+    
+    for i in range(len(method)):
+            
+            for j in range(len(bin_width)):
+                
+                smp.get_st_dev(bin_width[j],N,method[i])
+                
+                smp.plot_mean(400,method[i],bin_width[j],err=True)
+                
+                plt.savefig('{}_{}_w{}'.format(flag_list[0],method[i],bin_width[j]))
+
+
 #cProfile.run('smp.get_st_dev(100,10,str(rand))')
 
-"""1. Making a histogram with 100 bins of original sample and 10 resamples using bootstrap_rand"""
+"""1. Making a histogram with 100 bins of original sample and 10 resamples using bootstrap"""
 
 #smp.plot_resamples(10, 'random', 14, N_bins=50)
 
-"""2. Making a histogram with 100 bins of original sample and 5 resamples using bootstrap_err. Takes ~30 s!"""
+"""2. Making a histogram with 100 bins of original sample and 5 resamples using error_sampling. Takes ~30 s!"""
 
 #smp.plot_resamples(5, 'error', 14, N_bins=100)
 
