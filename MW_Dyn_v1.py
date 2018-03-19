@@ -4,6 +4,7 @@ import numpy as np
 import astropy.units as u
 import astropy.coordinates as coord
 import random
+import sys
 from astropy.io import ascii
 from astropy.table import Table
 from astropy.constants import G
@@ -166,7 +167,11 @@ class MW_dyn:
         self.re_bin_vals = None
         
         self.bin_vals = None
-
+        
+        self.dip_limit = None
+        
+        self.method = None
+        
     def error_sampling(self):
         
         if any(self.e_sample) == None:
@@ -235,7 +240,7 @@ class MW_dyn:
         return self.mean_sample
     
     
-    def get_st_dev(self, binwidth, N, method):
+    def get_st_dev(self, binwidth, N, method, dip = None):
         
         self.bin_heights, self.bin_vals = np.histogram(self.v_phi, bins=np.arange(min(self.v_phi.value),max(self.v_phi.value)+binwidth,binwidth))
         
@@ -246,6 +251,10 @@ class MW_dyn:
         s = np.zeros(N_bins)
         
         var = np.zeros(N_bins)
+        
+        self.method = method
+        
+        self.dip_limit = dip
         
         if method in ('error','err'):
             
@@ -261,6 +270,7 @@ class MW_dyn:
             
         else:
             raise Exception('Not a valid method')
+        
             
         for i in range(N):
             
@@ -272,8 +282,14 @@ class MW_dyn:
             
             if i == (3*N)/4:
                 print('Resampling 75 % done')
-            
-            self.re_bin_heights, self.re_bin_vals = np.histogram(func(), bins=self.bin_vals)
+                
+            if method in ('model'):
+                
+                self.re_bin_heights, self.re_bin_vals = np.histogram(func(str(dip)), bins=self.bin_vals)
+                
+            else:
+                
+                self.re_bin_heights, self.re_bin_vals = np.histogram(func(), bins=self.bin_vals)
             
             self.v_phis[i] = self.re_bin_heights
 
@@ -297,12 +313,16 @@ class MW_dyn:
         
         return self.st_dev
     
-    def model_vel(self):
+    def model_vel(self,dip_lim=''):
+        
+        if len(dip_lim)==0:
     
-        dip=True
-        dip_lim=10
+            dip_lim = raw_input('What dip limit do you want? ')
+            
+        dip_lim = int(dip_lim)
+
         wthin = 0.75
-        wthick=0.2
+        wthick= 0.2
         whalo = 1.-wthin-wthick
         
         thin0 = np.array([0,-215,0])
@@ -325,13 +345,13 @@ class MW_dyn:
                 velocity = thick0 + np.random.randn(3)*thick_disp
             else :
                 velocity = halo0 + np.random.randn(3)*halo_disp
-                
-            if dip==True and abs(velocity[1])<=dip_lim:
+
+            if dip_lim not in (0,None) and abs(velocity[1])<=dip_lim:
                 if velocity[1]<=0:
                     velocity[1]-=dip_lim
                 if velocity[1]>=0:
-                    velocity[1]+=dip_lim               
-                
+                    velocity[1]+=dip_lim
+                 
             vel_tot[j] = velocity
         
         vel_tot = vel_tot.transpose()
@@ -430,12 +450,6 @@ class MW_dyn:
     def get_halo(self,model=False):
   
         halo_dist = 100
-        
-        k=1
-        
-        if model==True:
-            
-            k=float(input('By which factor should we scale the distance? '))
           
         for i in range(len(self.sample_tp)):
         
@@ -450,7 +464,7 @@ class MW_dyn:
         self.halo = halo.transpose()
         
         self.icrs_res=coord.ICRS(ra = self.halo[0]*u.degree,dec = self.halo[1]*u.degree,
-                            distance = k*self.halo[2]*u.pc,
+                            distance = self.halo[2]*u.pc,
                             pm_ra_cosdec = self.halo[3]*u.mas/u.yr,
                             pm_dec = self.halo[4]*u.mas/u.yr,
                             radial_velocity = self.halo[5]*u.km/u.s)
@@ -511,7 +525,7 @@ class MW_dyn:
 
         return
 
-    def plot_mean(self, lim, method, binwidth=None, err=False, ymax=None,ymin=None, model=False):        
+    def plot_mean(self, lim, binwidth=None, err=False, ymax=None,ymin=None):        
 
         if any(self.mean_sample) == None:
             raise Exception('You need to compute a mean using your method of choice before plotting')
@@ -535,13 +549,15 @@ class MW_dyn:
         plt.xlim(-lim,lim)
         plt.ylim(ymin,ymax)
         
-        if model == True:
+        if self.method in ('model'):
             
+            plt.title('$\lambda = {}'.format(self.dip_limit)+'\ \mathrm{km\ s}^{-1}$')
+#            plt.bar(self.bin_vals[:-1], self.bin_heights, width=np.diff(self.bin_vals),color='grey',edgecolor='grey', log=True,label='TGAS & RAVE data',lw=1.6)
             plt.bar(self.bin_vals[:-1], self.mean_sample,width=np.diff(self.bin_vals),color='none', log=True,label='Mean of $v_\phi$ from model',edgecolor='red')
             
             plt.errorbar(self.bin_vals[:-1], self.mean_sample, yerr=err, fmt='none',ecolor='black', elinewidth=min(np.diff(self.bin_vals))/5 )
-
-
+            
+            plt.tight_layout()
             plt.legend()
             
             return
@@ -599,12 +615,14 @@ class MW_dyn:
         
 smp = MW_dyn(my_sample,e_my_sample,my_data_order)
 
-bin_width=[10]
 
-N=1000
+bin_width=[10,15,20]
 
-method=['error']
+N=100
 
+method=['model']
+
+dip_list = [0,5,10,15,20,30,40]
 
 def produce_plots():
     
@@ -612,11 +630,22 @@ def produce_plots():
             
             for j in range(len(bin_width)):
                 
-                smp.get_st_dev(bin_width[j],N,method[i])
+                for k in range(len(dip_list)):
+                    
+                    if method[i] == 'model':
+                        
+                        dip = dip_list[k]
+                        
+                    else:
+                        
+                        dip = None
                 
-                smp.plot_mean(400,method[i],bin_width[j],err=True)
-                
-                plt.savefig('{}_{}_w{}'.format(flag_list[0],method[i],bin_width[j]))
+                    smp.get_st_dev(bin_width[j],N,method[i],dip)
+                    
+                    smp.plot_mean(400,method[i],err=True)
+                    
+                    plt.savefig('{}_{}_w{}_d{}'.format(flag_list[0],method[i],bin_width[j],dip))
+                    
 
 
 #cProfile.run('smp.get_st_dev(100,10,str(rand))')
