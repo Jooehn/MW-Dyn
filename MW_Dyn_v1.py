@@ -61,7 +61,6 @@ dist = data['distance']*u.pc
 pm_RA = data['pmRA_TGAS']*u.mas/u.yr
 pm_DEC = data['pmDE_TGAS']*u.mas/u.yr
 rad_vel = data['HRV']*u.km/u.s
-mass = data['mass']*u.Msun
 met = data['Met_N_K']*u.dex
 
 e_RA = np.zeros(len(data))*u.degree
@@ -70,17 +69,16 @@ e_dist = data['edistance']*u.pc
 e_pm_RA = data['pmRA_error_TGAS']*u.mas/u.yr
 e_pm_DEC = data['pmDE_error_TGAS']*u.mas/u.yr
 e_rad_vel = data['eHRV']*u.km/u.s
-e_mass = data['e_mass']*u.Msun
 e_met = data['eMet_K']*u.dex
 
 
 ############## Bootstrapper ##################
 
-my_data_order=['RA', 'DEC', 'dist', 'pm_RA', 'pm_DEC', 'rad_vel','mass','metallicity']
+my_data_order=['RA', 'DEC', 'dist', 'pm_RA', 'pm_DEC', 'rad_vel','metallicity']
 
-my_sample = np.array([RA, DEC, dist, pm_RA, pm_DEC, rad_vel, mass, met])
+my_sample = np.array([RA, DEC, dist, pm_RA, pm_DEC, rad_vel, met])
 
-e_my_sample = np.array([e_RA, e_DEC, e_dist, e_pm_RA, e_pm_DEC, e_rad_vel, e_mass, e_met])
+e_my_sample = np.array([e_RA, e_DEC, e_dist, e_pm_RA, e_pm_DEC, e_rad_vel, e_met])
 
 class MW_dyn:
     
@@ -97,7 +95,6 @@ class MW_dyn:
         
         error_sampling: implements bootstrapping for uncertainties. Returns a resampling of the original sample
         bootstrap: creates a random resample of angular velocities from the original sample
-        bootstrap_mean: computes the mean of N resamples from error_sampling or bootstrap_mean.
         get_st_dev: computes the standard deviation for N resamples in every bin for either the 'error', 'rand' or 'model' method
         model_vel: creates a pseudosample from a velocity model for each coordinate in self.sample, 
                 then adds a random uncertainty within given range for each coordinate.
@@ -119,7 +116,7 @@ class MW_dyn:
         self.sample_tp = self.sample.transpose()
         
         self.resample = np.zeros(shape(self.sample))
-        
+
         self.resample_tp = self.resample.transpose()
         
         self.mean_sample = None
@@ -135,14 +132,15 @@ class MW_dyn:
 
         self.gc = self.icrs.transform_to(coord.Galactocentric(galcen_distance = gc_sun_dist, galcen_v_sun=v_sun, z_sun=gp_z_sun))
         self.gc.set_representation_cls(coord.CylindricalRepresentation)
-        
-        self.mass = self.sample[6]*u.Msun
+       
         
         self.ang_mom = np.zeros(len(self.sample))
         
         self.energy = np.zeros(len(self.sample))
         
-        self.met = self.sample[7]*u.dex
+        self.met = self.sample[6]*u.dex
+        
+        self.re_met = None
 
         self.halo = None
 
@@ -190,7 +188,7 @@ class MW_dyn:
         self.gc_res = self.icrs_res.transform_to(coord.Galactocentric(galcen_distance = gc_sun_dist, galcen_v_sun=v_sun, z_sun=gp_z_sun))
         self.gc_res.set_representation_cls(coord.CylindricalRepresentation)
         
-        self.res_v_phi = (self.gc_res.d_phi*self.gc.rho.to(u.kpc)).to(u.km/u.s,equivalencies =u.dimensionless_angles())
+        self.res_v_phi = (self.gc_res.d_phi*self.gc_res.rho.to(u.kpc)).to(u.km/u.s,equivalencies =u.dimensionless_angles())
                        
         return self.res_v_phi
     
@@ -214,33 +212,8 @@ class MW_dyn:
         self.res_v_phi = (self.gc_res.d_phi*self.gc_res.rho.to(u.kpc)).to(u.km/u.s,equivalencies =u.dimensionless_angles())
         
         return self.res_v_phi
-        
-    def bootstrap_mean(self, N, N_bins, method):
-        
-        s = np.zeros([N_bins])
-        
-        if method in ('error','err'):
-            
-            func = self.bootstrap
-            
-        else:
-            
-            func = self.error_sampling
-            
-        for i in range(N):
-            
-            self.bin_heights, self.bin_vals = np.histogram(self.v_phi, bins=N_bins)
-            
-            self.re_bin_heights, bin_vals = np.histogram(func(), bins=self.bin_vals)
-            
-            s += self.re_bin_heights
-            
-        self.mean_sample = s/N
-            
-        return self.mean_sample
     
-    
-    def get_st_dev(self, binwidth, N, method, dip = None):
+    def get_st_dev(self, binwidth, N, method, dip = 0):
         
         self.bin_heights, self.bin_vals = np.histogram(self.v_phi, bins=np.arange(min(self.v_phi.value),max(self.v_phi.value)+binwidth,binwidth))
         
@@ -313,14 +286,24 @@ class MW_dyn:
         
         return self.st_dev
     
-    def model_vel(self,dip_lim=''):
+    def model_vel(self,dip_lim='', halo=False):
         
-        if len(dip_lim)==0:
-    
-            dip_lim = raw_input('What dip limit do you want? ')
+        if halo == True:
             
-        dip_lim = int(dip_lim)
-
+            k=float(input('What factor should we scale the distance with? '))
+        
+        else:
+            
+            k = 1
+            
+        try:
+            if len(dip_lim)==0:
+    
+                dip_lim = raw_input('What dip limit do you want? ')
+            dip_lim = int(dip_lim)
+        except TypeError:
+            pass
+            
         wthin = 0.75
         wthick= 0.2
         whalo = 1.-wthin-wthick
@@ -370,8 +353,17 @@ class MW_dyn:
         
         err = self.e_sample*np.random.randn(self.e_sample.shape[0],self.e_sample.shape[1])
         
-        self.resample = array([self.icrs_res.ra,self.icrs_res.dec,self.icrs_res.distance,self.icrs_res.pm_ra_cosdec,self.icrs_res.pm_dec,self.icrs_res.radial_velocity]) + err[:-2]
-                
+        if halo==True:
+            
+            self.resample = array([self.icrs_res.ra,self.icrs_res.dec,k*self.icrs_res.distance,self.icrs_res.pm_ra_cosdec,self.icrs_res.pm_dec,self.icrs_res.radial_velocity,self.met])
+
+            self.re_met = self.resample[6]*u.dex
+        
+        else:
+        
+            self.resample = array([self.icrs_res.ra,self.icrs_res.dec,self.icrs_res.distance,self.icrs_res.pm_ra_cosdec,self.icrs_res.pm_dec,self.icrs_res.radial_velocity,self.met]) + err
+            
+
         self.icrs_res = coord.ICRS(ra = self.resample[0]*u.degree,dec = self.resample[1]*u.degree,
                             distance=self.resample[2]*u.pc,
                             pm_ra_cosdec=self.resample[3]*u.mas/u.yr,
@@ -381,7 +373,7 @@ class MW_dyn:
         self.gc_res = self.icrs_res.transform_to(coord.Galactocentric(galcen_distance = gc_sun_dist, galcen_v_sun=v_sun, z_sun=gp_z_sun))
         self.gc_res.set_representation_cls(coord.CylindricalRepresentation)
         
-        self.res_v_phi = (self.gc_res.d_phi*self.gc.rho.to(u.kpc)).to(u.km/u.s,equivalencies =u.dimensionless_angles())
+        self.res_v_phi = (self.gc_res.d_phi*self.gc_res.rho.to(u.kpc)).to(u.km/u.s,equivalencies =u.dimensionless_angles())
         
         return self.res_v_phi
     
@@ -448,18 +440,37 @@ class MW_dyn:
         return self.energy
     
     def get_halo(self,model=False):
+        
+        if model == True:
+                
+            self.model_vel(dip_lim=None,halo=True)
+            
+            input_data = self.resample.transpose()
+    
+            met = self.re_met
+        
+            dist = self.icrs_res.distance           
+           
+        else:
+            
+            input_data = self.sample_tp
+            
+            met = self.met
+            
+            dist = self.icrs.distance
   
         halo_dist = 100
-          
-        for i in range(len(self.sample_tp)):
         
-            if self.met[i].value<=-1.5 and smp.icrs.distance[i].value>=halo_dist:
+         
+        for i in range(len(input_data)):
+        
+            if met[i].value<=-1.5 and dist[i].value>=halo_dist:
                 try:
                     halo
                 except NameError:
-                    halo = self.sample_tp[i]
+                    halo = input_data[i]
                     pass
-                halo = np.vstack((halo,self.sample_tp[i]))  
+                halo = np.vstack((halo,input_data[i]))  
        
         self.halo = halo.transpose()
         
@@ -480,13 +491,17 @@ class MW_dyn:
 
         plt.figure()
 #        plt.title('$\mathrm{Histogram\ of\ stars\ with\ a\ given\ angular\ velocity\ }v_\phi$',fontdict=font)
-        plt.ylabel('$\mathrm{Number\ of\ stars}$')
-        plt.xlabel('$v_\phi\ \ [\mathrm{km\ s}^{-1}$]')
+        plt.ylabel('$\mathrm{Number\ of\ stars}$', fontsize = 'xx-large')
+        plt.xlabel('$v_\phi\ \ [\mathrm{km\ s}^{-1}$]', fontsize = 'xx-large')
         
+        plt.xticks(fontsize='x-large')
+        plt.yticks(fontsize='x-large')
+        plt.xlim(-lim,lim)
+        plt.ylim(1,100000)
         self.bin_heights, self.bin_vals = np.histogram(self.v_phi, bins=np.arange(min(self.v_phi.value),max(self.v_phi.value)+binwidth,binwidth))
         plt.bar(self.bin_vals[:-1], self.bin_heights, width=np.diff(self.bin_vals),color='none',edgecolor='blue', log=True,label='$TGAS\ & \ RAVE\ data$')
-        
-        plt.legend()
+        plt.tight_layout()
+        plt.legend(fontsize='x-large')
         return 
     
     def plot_resamples(self, N, method, lim, binwidth ):
@@ -496,9 +511,11 @@ class MW_dyn:
             binwidth = 15
         
         plt.figure()
+        plt.xticks(fontsize='large')
+        plt.yticks(fontsize='large')
 #        plt.title('$\mathrm{Histogram\ of\ stars\ with\ a\ given\ angular\ velocity\ }v_\phi$',fontdict=font)
-        plt.ylabel('$\mathrm{Number\ of\ stars}$', fontdict=font)
-        plt.xlabel('$v_\phi\ \ [\mathrm{km\ s}^{-1}$]', fontdict=font)
+        plt.ylabel('$\mathrm{Number\ of\ stars}$', fontdict=font, fontsize = 'xx-large')
+        plt.xlabel('$v_\phi\ \ [\mathrm{km\ s}^{-1}$]', fontdict=font, fontsize='xx-large')
 
         if method in ('bootstrap','boot'):
                 
@@ -515,7 +532,7 @@ class MW_dyn:
                 
             func = self.error_sampling
             plt.hist(self.v_phi.value, bins=np.arange(min(self.res_v_phi.value),max(self.res_v_phi.value)+binwidth,binwidth), log=True, range=(-lim,lim),histtype='step',label='$TGAS\ & \ RAVE\ data$')
-            plt.legend()
+            plt.legend(fontsize='x-large')
 
         for i in range(N):
     
@@ -543,33 +560,35 @@ class MW_dyn:
             err = self.st_dev
             
         plt.figure()
+        plt.xticks(fontsize='x-large')
+        plt.yticks(fontsize='x-large')
 #        plt.title('$\mathrm{Histogram\ of\ stars\ with\ a\ given\ angular\ velocity\ }v_\phi$')
-        plt.ylabel('$\mathrm{Number\ of\ stars}$')
-        plt.xlabel('$v_\phi\ \ [\mathrm{km\ s}^{-1}$]', fontdict=font)
+        plt.ylabel('$\mathrm{Number\ of\ stars}$', fontsize='xx-large')
+        plt.xlabel('$v_\phi\ \ [\mathrm{km\ s}^{-1}$]', fontdict=font, fontsize='xx-large')
         plt.xlim(-lim,lim)
         plt.ylim(ymin,ymax)
         
         if self.method in ('model'):
             
-            plt.title('$\lambda = {}'.format(self.dip_limit)+'\ \mathrm{km\ s}^{-1}$')
+            plt.title('$\lambda = {}'.format(self.dip_limit)+'\ \mathrm{km\ s}^{-1}$',fontsize='x-large')
 #            plt.bar(self.bin_vals[:-1], self.bin_heights, width=np.diff(self.bin_vals),color='grey',edgecolor='grey', log=True,label='TGAS & RAVE data',lw=1.6)
             plt.bar(self.bin_vals[:-1], self.mean_sample,width=np.diff(self.bin_vals),color='none', log=True,label='Mean of $v_\phi$ from model',edgecolor='red')
             
             plt.errorbar(self.bin_vals[:-1], self.mean_sample, yerr=err, fmt='none',ecolor='black', elinewidth=min(np.diff(self.bin_vals))/5 )
             
             plt.tight_layout()
-            plt.legend()
+            plt.legend(fontsize='x-large')
             
             return
         
         ####Change labels for the legends to include binwidth#####
         
         plt.bar(self.bin_vals[:-1], self.bin_heights, width=np.diff(self.bin_vals),color='grey',edgecolor='grey', log=True,label='TGAS & RAVE data',lw=1.6)
-        plt.bar(self.bin_vals[:-1], self.mean_sample, width=np.diff(self.bin_vals),color='none', log=True,label='Mean of {} sampling'.format(method),edgecolor='b',lw=1.6)
+        plt.bar(self.bin_vals[:-1], self.mean_sample, width=np.diff(self.bin_vals),color='none', log=True,label='Mean of {} sampling'.format(self.method),edgecolor='b',lw=1.6)
 
         plt.errorbar(self.bin_vals[:-1], self.mean_sample, yerr = err, fmt = 'none', ecolor = 'black', elinewidth=min(np.diff(self.bin_vals))/5)
         plt.tight_layout()
-        plt.legend()
+        plt.legend(fontsize='x-large')
 
         return
     
@@ -596,11 +615,13 @@ class MW_dyn:
             energy = self.get_energy()*10**(-5)
         
         plt.figure()
-        plt.xlabel('$L_z$ [km s$^{-1}$ kpc]')
-        plt.ylabel('Energy [$10^5$ km$^2$ s$^{-2}$]')
+        plt.xticks(fontsize='large')
+        plt.yticks(fontsize='large')
+        plt.xlabel('$L_z$ [km s$^{-1}$ kpc]',fontsize='xx-large')
+        plt.ylabel('Energy [$10^5$ km$^2$ s$^{-2}$]',fontsize='xx-large')
         plt.xlim(-4500,4500)
         plt.ylim(-2.1,0.2)
-        plt.scatter(ang_mom, energy, s=2, c='none', edgecolors='blue')
+        plt.scatter(ang_mom, energy, s=2, c='none', edgecolors='blue', label='Halo stars from TGAS')
         plt.tight_layout()
         
     def save_mean_data(self,filename):
@@ -616,7 +637,7 @@ class MW_dyn:
 smp = MW_dyn(my_sample,e_my_sample,my_data_order)
 
 
-bin_width=[10,15,20]
+bin_width=[10]
 
 N=100
 
@@ -630,21 +651,28 @@ def produce_plots():
             
             for j in range(len(bin_width)):
                 
-                for k in range(len(dip_list)):
-                    
-                    if method[i] == 'model':
+                if method[i] == 'model':
+                                       
+                    for k in range(len(dip_list)):
                         
                         dip = dip_list[k]
-                        
-                    else:
-                        
-                        dip = None
-                
-                    smp.get_st_dev(bin_width[j],N,method[i],dip)
+                    
+                        smp.get_st_dev(bin_width[j],N,method[i],dip)
+                    
+                        smp.plot_mean(400,method[i],err=True)
+                    
+                        plt.savefig('{}_{}_w{}_d{}'.format(flag_list[0],method[i],bin_width[j],dip))
+
+                else:
+                    
+                    smp.get_st_dev(bin_width[j],N,method[i])
                     
                     smp.plot_mean(400,method[i],err=True)
                     
-                    plt.savefig('{}_{}_w{}_d{}'.format(flag_list[0],method[i],bin_width[j],dip))
+                    plt.savefig('{}_{}_w{}'.format(flag_list[0],method[i],bin_width[j]))
+
+                
+                    
                     
 
 
@@ -657,20 +685,3 @@ def produce_plots():
 """2. Making a histogram with 100 bins of original sample and 5 resamples using error_sampling. Takes ~30 s!"""
 
 #smp.plot_resamples(5, 'error', 14, N_bins=100)
-
-#halo_dist = 100
-#  
-#for i in range(len(smp.sample_tp)):
-#
-#    try:
-#        if float(Fe[i])<=-1.5:# and smp.icrs.distance[i].value>=halo_dist:
-#            try:
-#                halo
-#            except NameError:
-#                halo = smp.sample_tp[i]
-#                pass
-#            halo = np.vstack((halo,smp.sample_tp[i]))  
-#    except ValueError:
-#            continue
-#
-#halo = halo.transpose()
