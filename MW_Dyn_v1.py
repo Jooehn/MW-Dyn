@@ -143,6 +143,8 @@ class MW_dyn:
         self.re_met = None
 
         self.halo = None
+        
+        self.e_halo = None
 
         self.icrs_res = None
         
@@ -287,14 +289,6 @@ class MW_dyn:
         return self.st_dev
     
     def model_vel(self,dip_lim='', halo=False):
-        
-        if halo == True:
-            
-            k=float(input('What factor should we scale the distance with? '))
-        
-        else:
-            
-            k = 1
             
         try:
             if len(dip_lim)==0:
@@ -304,8 +298,8 @@ class MW_dyn:
         except TypeError:
             pass
             
-        wthin = 0.75
-        wthick= 0.2
+        wthin = 0.91
+        wthick= 0.08
         whalo = 1.-wthin-wthick
         
         thin0 = np.array([0,-215,0])
@@ -318,32 +312,54 @@ class MW_dyn:
         
         which = np.random.random_sample(len(self.gc))
         
-        vel_tot=np.zeros([len(self.gc),3])
+        if halo == True:
+            
+            k = float(input('What factor should we scale the distance with? '))
+            
+            frame = self.gc_res
+            
+            vel_tot = np.zeros([len(self.halo),3])
+            
+            error_data = self.e_halo
+            
+            for i in range(len(self.halo)):
+            
+                vel_tot[i] = halo0 + np.random.randn(3)*halo_disp
+                
+        else:
     
-        for j in range(len(self.gc)):
+            k = 1
+            
+            frame = self.gc
+            
+            vel_tot=np.zeros([len(self.gc),3])
+            
+            error_data = self.e_sample
+            
+            for j in range(len(self.gc)):
+        
+                if which[j] < wthin :
+                    velocity = thin0 + np.random.randn(3)*thin_disp
+                elif which[j] < wthin+wthick :
+                    velocity = thick0 + np.random.randn(3)*thick_disp
+                else :
+                    velocity = halo0 + np.random.randn(3)*halo_disp
     
-            if which[j] < wthin :
-                velocity = thin0 + np.random.randn(3)*thin_disp
-            elif which[j] < wthin+wthick :
-                velocity = thick0 + np.random.randn(3)*thick_disp
-            else :
-                velocity = halo0 + np.random.randn(3)*halo_disp
-
-            if dip_lim not in (0,None) and abs(velocity[1])<=dip_lim:
-                if velocity[1]<=0:
-                    velocity[1]-=dip_lim
-                if velocity[1]>=0:
-                    velocity[1]+=dip_lim
+                if dip_lim not in (0,None) and abs(velocity[1])<=dip_lim:
+                    if velocity[1]<=0:
+                        velocity[1]-=dip_lim
+                    if velocity[1]>=0:
+                        velocity[1]+=dip_lim
                  
-            vel_tot[j] = velocity
+                vel_tot[j] = velocity
         
         vel_tot = vel_tot.transpose()
-        vel_tot[1]=vel_tot[1]/self.gc.rho.to(u.km).value
+        vel_tot[1]=vel_tot[1]/frame.rho.to(u.km).value
         
         cyl_diff = coord.CylindricalDifferential(d_rho=vel_tot[0]*u.km/u.s,d_phi=vel_tot[1]/u.s,d_z=vel_tot[2]*u.km/u.s)
         
-        self.gc_res = coord.Galactocentric(representation = coord.CylindricalRepresentation, rho=self.gc.rho,
-                                           phi=self.gc.phi,z=self.gc.z,d_rho=cyl_diff.d_rho.to((u.mas*u.pc)/(u.yr*u.rad),equivalencies=u.dimensionless_angles()),
+        self.gc_res = coord.Galactocentric(representation = coord.CylindricalRepresentation, rho=frame.rho,
+                                           phi=frame.phi,z=frame.z,d_rho=cyl_diff.d_rho.to((u.mas*u.pc)/(u.yr*u.rad),equivalencies=u.dimensionless_angles()),
                                            d_phi=cyl_diff.d_phi.to(u.mas/u.yr,equivalencies=u.dimensionless_angles()),
                                            d_z=cyl_diff.d_z.to((u.mas*u.pc)/(u.yr*u.rad),equivalencies=u.dimensionless_angles()),
                                            galcen_distance = gc_sun_dist, galcen_v_sun=v_sun, z_sun=gp_z_sun, differential_cls=coord.CylindricalDifferential)
@@ -351,19 +367,12 @@ class MW_dyn:
         self.icrs_res = self.gc_res.transform_to(coord.ICRS)
         self.icrs_res.set_representation_cls(coord.SphericalRepresentation,s=coord.SphericalCosLatDifferential)
         
-        err = self.e_sample*np.random.randn(self.e_sample.shape[0],self.e_sample.shape[1])
-        
-        if halo==True:
+        err = error_data*np.random.randn(error_data.shape[0],error_data.shape[1])
             
-            self.resample = array([self.icrs_res.ra,self.icrs_res.dec,k*self.icrs_res.distance,self.icrs_res.pm_ra_cosdec,self.icrs_res.pm_dec,self.icrs_res.radial_velocity,self.met])
+        self.resample = array([self.icrs_res.ra,self.icrs_res.dec,k*self.icrs_res.distance,self.icrs_res.pm_ra_cosdec,self.icrs_res.pm_dec,self.icrs_res.radial_velocity,self.met]) + err
 
-            self.re_met = self.resample[6]*u.dex
-        
-        else:
-        
-            self.resample = array([self.icrs_res.ra,self.icrs_res.dec,self.icrs_res.distance,self.icrs_res.pm_ra_cosdec,self.icrs_res.pm_dec,self.icrs_res.radial_velocity,self.met]) + err
+        self.re_met = self.resample[6]*u.dex
             
-
         self.icrs_res = coord.ICRS(ra = self.resample[0]*u.degree,dec = self.resample[1]*u.degree,
                             distance=self.resample[2]*u.pc,
                             pm_ra_cosdec=self.resample[3]*u.mas/u.yr,
@@ -440,39 +449,33 @@ class MW_dyn:
         return self.energy
     
     def get_halo(self,model=False):
+            
+        input_data = self.sample_tp
         
-        if model == True:
-                
-            self.model_vel(dip_lim=None,halo=True)
-            
-            input_data = self.resample.transpose()
-    
-            met = self.re_met
+        e_input_data = self.e_sample.transpose()
         
-            dist = self.icrs_res.distance           
-           
-        else:
-            
-            input_data = self.sample_tp
-            
-            met = self.met
-            
-            dist = self.icrs.distance
+        met = self.met
+        
+        dist = self.icrs.distance
   
         halo_dist = 100
-        
          
         for i in range(len(input_data)):
         
             if met[i].value<=-1.5 and dist[i].value>=halo_dist:
                 try:
                     halo
+                    e_halo
                 except NameError:
                     halo = input_data[i]
+                    e_halo = e_input_data[i]
                     pass
                 halo = np.vstack((halo,input_data[i]))  
+                e_halo = np.vstack((e_halo,e_input_data[i]))
        
         self.halo = halo.transpose()
+        
+        self.e_halo = e_halo.transpose()
         
         self.icrs_res=coord.ICRS(ra = self.halo[0]*u.degree,dec = self.halo[1]*u.degree,
                             distance = self.halo[2]*u.pc,
@@ -527,6 +530,7 @@ class MW_dyn:
         elif method in ('model','mod'):
             
             func = self.model_vel
+
 			
         else:
                 
@@ -596,13 +600,11 @@ class MW_dyn:
         
         if halo==True:
             
+            self.get_halo()
+            
             if model==True:
 
-                self.get_halo(True)
-                
-            else:
-                
-                self.get_halo()
+                self.model_vel(dip_lim = None, halo=True)
                 
             ang_mom = self.get_ang_mom(halo)
             
@@ -637,7 +639,7 @@ class MW_dyn:
 smp = MW_dyn(my_sample,e_my_sample,my_data_order)
 
 
-bin_width=[10]
+bin_width=[15,20]
 
 N=100
 
@@ -662,6 +664,14 @@ def produce_plots():
                         smp.plot_mean(400,method[i],err=True)
                     
                         plt.savefig('{}_{}_w{}_d{}'.format(flag_list[0],method[i],bin_width[j],dip))
+                        
+                        plt.close()
+                        
+                        smp.plot_mean(75,method[i],err=True,ymin=10,ymax=1e3)
+                        
+                        plt.savefig('{}_{}_w{}_d{}_z'.format(flag_list[0],method[i],bin_width[j],dip))
+
+                        plt.close()
 
                 else:
                     
