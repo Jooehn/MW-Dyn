@@ -318,11 +318,13 @@ class MW_dyn:
             
             frame = self.gc_res
             
-            vel_tot = np.zeros([len(self.halo),3])
+            metallicity = self.halo[-1]
+            
+            vel_tot = np.zeros([len(self.gc_res),3])
             
             error_data = self.e_halo
             
-            for i in range(len(self.halo)):
+            for i in range(len(self.gc_res)):
             
                 vel_tot[i] = halo0 + np.random.randn(3)*halo_disp
                 
@@ -331,6 +333,8 @@ class MW_dyn:
             k = 1
             
             frame = self.gc
+            
+            metallicity = self.met
             
             vel_tot=np.zeros([len(self.gc),3])
             
@@ -369,7 +373,7 @@ class MW_dyn:
         
         err = error_data*np.random.randn(error_data.shape[0],error_data.shape[1])
             
-        self.resample = array([self.icrs_res.ra,self.icrs_res.dec,k*self.icrs_res.distance,self.icrs_res.pm_ra_cosdec,self.icrs_res.pm_dec,self.icrs_res.radial_velocity,self.met]) + err
+        self.resample = array([self.icrs_res.ra,self.icrs_res.dec,k*self.icrs_res.distance,self.icrs_res.pm_ra_cosdec,self.icrs_res.pm_dec,self.icrs_res.radial_velocity,metallicity]) + err
 
         self.re_met = self.resample[6]*u.dex
             
@@ -448,7 +452,7 @@ class MW_dyn:
         
         return self.energy
     
-    def get_halo(self,model=False):
+    def get_halo(self):
             
         input_data = self.sample_tp
         
@@ -683,8 +687,13 @@ def produce_plots():
 
                 
                     
-                    
-
+#smp.get_halo()
+#plt.figure()               
+#plt.xlim(-400,400)  
+#plt.hist(smp.res_v_phi.value,bins=100,label='Default')
+#smp.model_vel(dip_lim=None,halo=True)
+#plt.hist(smp.res_v_phi.value,bins=100,label='Model')
+#plt.legend()
 
 #cProfile.run('smp.get_st_dev(100,10,str(rand))')
 
