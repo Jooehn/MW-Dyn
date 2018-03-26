@@ -172,6 +172,8 @@ class MW_dyn:
         
         self.method = None
         
+        self.scale_dist = None
+        
     def error_sampling(self):
         
         if any(self.e_sample) == None:
@@ -314,7 +316,7 @@ class MW_dyn:
         
         if halo == True:
             
-            k = float(input('What factor should we scale the distance with? '))
+            self.scale_dist = float(input('What factor should we scale the distance with? '))
             
             frame = self.gc_res
             
@@ -330,7 +332,7 @@ class MW_dyn:
                 
         else:
     
-            k = 1
+            self.scale_dist = 1
             
             frame = self.gc
             
@@ -371,9 +373,11 @@ class MW_dyn:
         self.icrs_res = self.gc_res.transform_to(coord.ICRS)
         self.icrs_res.set_representation_cls(coord.SphericalRepresentation,s=coord.SphericalCosLatDifferential)
         
+#        error_data[2]=error_data[2]*self.scale_dist
+        
         err = error_data*np.random.randn(error_data.shape[0],error_data.shape[1])
             
-        self.resample = array([self.icrs_res.ra,self.icrs_res.dec,k*self.icrs_res.distance,self.icrs_res.pm_ra_cosdec,self.icrs_res.pm_dec,self.icrs_res.radial_velocity,metallicity]) + err
+        self.resample = array([self.icrs_res.ra,self.icrs_res.dec,self.scale_dist*self.icrs_res.distance,self.icrs_res.pm_ra_cosdec,self.icrs_res.pm_dec,self.icrs_res.radial_velocity,metallicity]) + err
 
         self.re_met = self.resample[6]*u.dex
             
@@ -602,13 +606,22 @@ class MW_dyn:
     
     def plot_E_L(self, halo=False,model=False):
         
+        plt.figure()
+        
         if halo==True:
             
             self.get_halo()
             
             if model==True:
-
+                
                 self.model_vel(dip_lim = None, halo=True)
+                
+                if self.scale_dist == 1:
+                    plt.title(r'$\mathrm{Model\ halo\ with\ default}\ \rho$',fontsize='x-large')
+                    
+                else:
+                    
+                    plt.title('$\mathrm{Model\ halo\ with\ }'+ '{}'.format(self.scale_dist)+r'\rho$',fontsize='x-large')
                 
             ang_mom = self.get_ang_mom(halo)
             
@@ -620,7 +633,7 @@ class MW_dyn:
             
             energy = self.get_energy()*10**(-5)
         
-        plt.figure()
+
         plt.xticks(fontsize='large')
         plt.yticks(fontsize='large')
         plt.xlabel('$L_z$ [km s$^{-1}$ kpc]',fontsize='xx-large')
@@ -671,7 +684,7 @@ def produce_plots():
                         
                         plt.close()
                         
-                        smp.plot_mean(75,method[i],err=True,ymin=10,ymax=1e3)
+                        smp.plot_mean(75,method[i],err=True,ymin=1,ymax=1e3)
                         
                         plt.savefig('{}_{}_w{}_d{}_z'.format(flag_list[0],method[i],bin_width[j],dip))
 
