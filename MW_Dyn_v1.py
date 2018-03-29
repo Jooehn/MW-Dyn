@@ -39,6 +39,8 @@ data = Table(data_raw, copy=True)
 
 """flag_list should contain the flags that are to be removed from the data if raised"""
 
+
+#flag_list = ['flag_dup','flag_N','flag_outlier','flag_pole']
 flag_list = ['flag_dup']
 
 try:
@@ -145,6 +147,10 @@ class MW_dyn:
         self.halo = None
         
         self.e_halo = None
+        
+        self.halo_gc = None
+        
+        self.halo_gc_res = None
 
         self.icrs_res = None
         
@@ -174,25 +180,81 @@ class MW_dyn:
         
         self.scale_dist = None
         
-    def error_sampling(self):
+    def error_sampling(self,halo=False,scale_dist=None):
         
         if any(self.e_sample) == None:
             raise Exception('Uncertainties are needed to perform this action')
             
-        err = self.e_sample*np.random.randn(self.e_sample.shape[0],self.e_sample.shape[1])
+        if halo == True:
+            
+            if scale_dist==None:
+                
+                self.scale_dist = 1
+                
+            else:
+            
+                self.scale_dist = scale_dist
+            
+            sample = self.halo
+            
+            error_data = self.e_halo
+                
+        else:
+    
+            self.scale_dist = 1
+            
+            sample = self.sample
+
+            error_data = self.e_sample
+            
+        err = error_data*np.random.randn(error_data.shape[0],error_data.shape[1])
         
-        self.resample = self.sample + err
+        self.resample = sample + err
                 
         self.icrs_res=coord.ICRS(ra = self.resample[0]*u.degree,dec = self.resample[1]*u.degree,
-                            distance=self.resample[2]*u.pc,
+                            distance=self.scale_dist*self.resample[2]*u.pc,
                             pm_ra_cosdec=self.resample[3]*u.mas/u.yr,
                             pm_dec=self.resample[4]*u.mas/u.yr,
                             radial_velocity=self.resample[5]*u.km/u.s)
-
-        self.gc_res = self.icrs_res.transform_to(coord.Galactocentric(galcen_distance = gc_sun_dist, galcen_v_sun=v_sun, z_sun=gp_z_sun))
-        self.gc_res.set_representation_cls(coord.CylindricalRepresentation)
         
-        self.res_v_phi = (self.gc_res.d_phi*self.gc_res.rho.to(u.kpc)).to(u.km/u.s,equivalencies =u.dimensionless_angles())
+        
+#        self.resample = self.sample + err
+#                
+#        self.icrs_res=coord.ICRS(ra = self.resample[0]*u.degree,dec = self.resample[1]*u.degree,
+#                            distance=self.resample[2]*u.pc,
+#                            pm_ra_cosdec=self.resample[3]*u.mas/u.yr,
+#                            pm_dec=self.resample[4]*u.mas/u.yr,
+#                            radial_velocity=self.resample[5]*u.km/u.s)
+#           
+#        err = self.e_sample*np.random.randn(self.e_sample.shape[0],self.e_sample.shape[1])
+#        
+#        self.resample = self.sample + err
+#                
+#        self.icrs_res=coord.ICRS(ra = self.resample[0]*u.degree,dec = self.resample[1]*u.degree,
+#                            distance=self.resample[2]*u.pc,
+#                            pm_ra_cosdec=self.resample[3]*u.mas/u.yr,
+#                            pm_dec=self.resample[4]*u.mas/u.yr,
+#                            radial_velocity=self.resample[5]*u.km/u.s)
+#
+#        self.gc_res = self.icrs_res.transform_to(coord.Galactocentric(galcen_distance = gc_sun_dist, galcen_v_sun=v_sun, z_sun=gp_z_sun))
+#        self.gc_res.set_representation_cls(coord.CylindricalRepresentation)
+#
+#        self.res_v_phi = (self.gc_res.d_phi*self.gc_res.rho.to(u.kpc)).to(u.km/u.s,equivalencies =u.dimensionless_angles())
+
+        
+        new_frame = self.icrs_res.transform_to(coord.Galactocentric(galcen_distance = gc_sun_dist, galcen_v_sun=v_sun, z_sun=gp_z_sun))
+        new_frame.set_representation_cls(coord.CylindricalRepresentation)
+        
+        if halo == True:
+            
+            self.halo_gc_res = new_frame
+            
+        else:
+            
+            self.gc_res = new_frame
+            
+        self.res_v_phi = (new_frame.d_phi*new_frame.rho.to(u.kpc)).to(u.km/u.s,equivalencies =u.dimensionless_angles())
+
                        
         return self.res_v_phi
     
@@ -290,7 +352,7 @@ class MW_dyn:
         
         return self.st_dev
     
-    def model_vel(self,dip_lim='', halo=False):
+    def model_vel(self,dip_lim='', halo=False,scale_dist=None):
             
         try:
             if len(dip_lim)==0:
@@ -316,17 +378,23 @@ class MW_dyn:
         
         if halo == True:
             
-            self.scale_dist = float(input('What factor should we scale the distance with? '))
+            if scale_dist==None:
+                
+                self.scale_dist = 1
+                
+            else:
             
-            frame = self.gc_res
+                self.scale_dist = scale_dist
+            
+            frame = self.halo_gc
             
             metallicity = self.halo[-1]
             
-            vel_tot = np.zeros([len(self.gc_res),3])
+            vel_tot = np.zeros([len(self.halo_gc),3])
             
             error_data = self.e_halo
             
-            for i in range(len(self.gc_res)):
+            for i in range(len(self.halo_gc)):
             
                 vel_tot[i] = halo0 + np.random.randn(3)*halo_disp
                 
@@ -364,13 +432,13 @@ class MW_dyn:
         
         cyl_diff = coord.CylindricalDifferential(d_rho=vel_tot[0]*u.km/u.s,d_phi=vel_tot[1]/u.s,d_z=vel_tot[2]*u.km/u.s)
         
-        self.gc_res = coord.Galactocentric(representation = coord.CylindricalRepresentation, rho=frame.rho,
+        new_frame = coord.Galactocentric(representation = coord.CylindricalRepresentation, rho=frame.rho,
                                            phi=frame.phi,z=frame.z,d_rho=cyl_diff.d_rho.to((u.mas*u.pc)/(u.yr*u.rad),equivalencies=u.dimensionless_angles()),
                                            d_phi=cyl_diff.d_phi.to(u.mas/u.yr,equivalencies=u.dimensionless_angles()),
                                            d_z=cyl_diff.d_z.to((u.mas*u.pc)/(u.yr*u.rad),equivalencies=u.dimensionless_angles()),
                                            galcen_distance = gc_sun_dist, galcen_v_sun=v_sun, z_sun=gp_z_sun, differential_cls=coord.CylindricalDifferential)
         
-        self.icrs_res = self.gc_res.transform_to(coord.ICRS)
+        self.icrs_res = new_frame.transform_to(coord.ICRS)
         self.icrs_res.set_representation_cls(coord.SphericalRepresentation,s=coord.SphericalCosLatDifferential)
         
 #        error_data[2]=error_data[2]*self.scale_dist
@@ -387,10 +455,18 @@ class MW_dyn:
                             pm_dec=self.resample[4]*u.mas/u.yr,
                             radial_velocity=self.resample[5]*u.km/u.s)
         
-        self.gc_res = self.icrs_res.transform_to(coord.Galactocentric(galcen_distance = gc_sun_dist, galcen_v_sun=v_sun, z_sun=gp_z_sun))
-        self.gc_res.set_representation_cls(coord.CylindricalRepresentation)
+        new_frame = self.icrs_res.transform_to(coord.Galactocentric(galcen_distance = gc_sun_dist, galcen_v_sun=v_sun, z_sun=gp_z_sun))
+        new_frame.set_representation_cls(coord.CylindricalRepresentation)
         
-        self.res_v_phi = (self.gc_res.d_phi*self.gc_res.rho.to(u.kpc)).to(u.km/u.s,equivalencies =u.dimensionless_angles())
+        self.res_v_phi = (new_frame.d_phi*new_frame.rho.to(u.kpc)).to(u.km/u.s,equivalencies =u.dimensionless_angles())
+        
+        if halo == True:
+            
+            self.halo_gc_res = new_frame
+            
+        else:
+            
+            self.gc_res = new_frame
         
         return self.res_v_phi
     
@@ -398,7 +474,7 @@ class MW_dyn:
         
         if halo==True:
             
-            self.ang_mom = -self.gc_res.rho.to(u.kpc)*self.res_v_phi
+            self.ang_mom = -self.halo_gc_res.rho.to(u.kpc)*self.res_v_phi
             
             return self.ang_mom
         
@@ -420,15 +496,15 @@ class MW_dyn:
         
         if halo==True:
             
-            rho = self.gc_res.rho.to(u.kpc)
+            rho = self.halo_gc_res.rho.to(u.kpc)
             
-            z = self.gc_res.z.to(u.kpc)
+            z = self.halo_gc_res.z.to(u.kpc)
             
-            v_phi = (self.gc_res.d_phi*self.gc_res.rho.to(u.kpc)).to(u.km/u.s,equivalencies =u.dimensionless_angles())
+            v_phi = (self.halo_gc_res.d_phi*self.halo_gc_res.rho.to(u.kpc)).to(u.km/u.s,equivalencies =u.dimensionless_angles())
             
-            v_rho = self.gc_res.d_rho.to(u.km/u.s)
+            v_rho = self.halo_gc_res.d_rho.to(u.km/u.s)
             
-            v_z = self.gc_res.d_z.to(u.km/u.s)
+            v_z = self.halo_gc_res.d_z.to(u.km/u.s)
             
         else:
             
@@ -452,7 +528,7 @@ class MW_dyn:
         
         E_kin = (v_rho**2+v_phi**2+v_z**2)/2
     
-        self.energy = E_halo+E_disc+E_bulge+E_kin-1.7e5*(u.km**2/u.s**2)
+        self.energy = (E_halo+E_disc+E_bulge+E_kin-1.7e5*(u.km**2/u.s**2))*1e-5
         
         return self.energy
     
@@ -491,12 +567,74 @@ class MW_dyn:
                             pm_dec = self.halo[4]*u.mas/u.yr,
                             radial_velocity = self.halo[5]*u.km/u.s)
 
-        self.gc_res = self.icrs_res.transform_to(coord.Galactocentric(galcen_distance = gc_sun_dist, galcen_v_sun=v_sun, z_sun=gp_z_sun))
-        self.gc_res.set_representation_cls(coord.CylindricalRepresentation)
+        self.halo_gc = self.icrs_res.transform_to(coord.Galactocentric(galcen_distance = gc_sun_dist, galcen_v_sun=v_sun, z_sun=gp_z_sun))
+        self.halo_gc.set_representation_cls(coord.CylindricalRepresentation)
         
-        self.res_v_phi = (self.gc_res.d_phi*self.gc_res.rho.to(u.kpc)).to(u.km/u.s,equivalencies =u.dimensionless_angles())
+        self.res_v_phi = (self.halo_gc.d_phi*self.halo_gc.rho.to(u.kpc)).to(u.km/u.s,equivalencies =u.dimensionless_angles())
         
         return
+    
+    def get_halo_cut(self,N,E_cut,model=False,scale_dist=None):
+        
+        l_cut_av = 0
+        
+        l_cut = np.zeros(N)
+        
+        var = 0
+        
+        self.get_halo()
+
+        for k in range(N):
+      
+            low_E=[]
+            left = 0
+            
+            if model == True:
+            
+                self.model_vel(dip_lim = None, halo=True,scale_dist=scale_dist)
+                
+            else:
+                
+                self.error_sampling(halo=True)
+            
+            ang_mom = self.get_ang_mom(halo=True).value
+            
+            energy = self.get_energy(halo=True).value
+            
+            for i in range(len(energy)):
+                
+                if energy[i]<=E_cut:
+                    
+                    low_E.append(i)
+                    
+            energy = np.delete(energy,low_E)
+                    
+            ang_mom = np.delete(ang_mom,low_E)
+            
+            for j in range(len(ang_mom)):
+                
+                if ang_mom[j] <=0:
+                    
+                    left+=1
+                    
+            l_cut[k] = left / len(ang_mom)
+            
+            l_cut_av += left / len(ang_mom)
+          
+        l_cut_av = l_cut_av / N    
+            
+        for i in range(N):
+        
+            var += (l_cut[i] - l_cut_av)**2
+    
+        st_dev = np.round(sqrt(var/N),decimals=3)
+            
+        neg_L = np.round(l_cut_av,decimals=3)
+        
+        pos_L = 1-neg_L
+        
+        return neg_L,pos_L,st_dev
+                    
     
     def plot_sample(self,lim,binwidth):
 
@@ -604,7 +742,7 @@ class MW_dyn:
 
         return
     
-    def plot_E_L(self, halo=False,model=False):
+    def plot_E_L(self, halo=False,model=False,scale_dist=None):
         
         plt.figure()
         
@@ -612,9 +750,11 @@ class MW_dyn:
             
             self.get_halo()
             
+            self.halo_gc_res = self.halo_gc
+            
             if model==True:
-                
-                self.model_vel(dip_lim = None, halo=True)
+                    
+                self.model_vel(dip_lim = None, halo=True,scale_dist=scale_dist)
                 
                 if self.scale_dist == 1:
                     plt.title(r'$\mathrm{Model\ halo\ with\ default}\ \rho$',fontsize='x-large')
@@ -625,13 +765,13 @@ class MW_dyn:
                 
             ang_mom = self.get_ang_mom(halo)
             
-            energy = self.get_energy(halo)*10**(-5)
+            energy = self.get_energy(halo)
             
         else:
             
             ang_mom = self.get_ang_mom()
             
-            energy = self.get_energy()*10**(-5)
+            energy = self.get_energy()
         
 
         plt.xticks(fontsize='large')
@@ -656,11 +796,11 @@ class MW_dyn:
 smp = MW_dyn(my_sample,e_my_sample,my_data_order)
 
 
-bin_width=[15,20]
+bin_width=[5,10]
 
-N=100
+N=1000
 
-method=['model']
+method=['error','bootstrap']
 
 dip_list = [0,5,10,15,20,30,40]
 
@@ -697,6 +837,15 @@ def produce_plots():
                     smp.plot_mean(400,method[i],err=True)
                     
                     plt.savefig('{}_{}_w{}'.format(flag_list[0],method[i],bin_width[j]))
+                    
+                    plt.close()
+                    
+                    smp.plot_mean(75,method[i],err=True,ymin=1,ymax=1e3)
+                        
+                    plt.savefig('{}_{}_w{}_z'.format(flag_list[0],method[i],bin_width[j]))
+
+                    plt.close()
+
 
                 
                     
