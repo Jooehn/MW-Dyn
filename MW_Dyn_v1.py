@@ -1,4 +1,5 @@
 from scipy import *
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
 import astropy.units as u
@@ -8,6 +9,9 @@ import sys
 from astropy.io import ascii
 from astropy.table import Table
 from astropy.constants import G
+from scipy.stats import binned_statistic as b_stat
+from scipy.stats import binned_statistic_2d as b_stat2d
+from scipy.stats import binned_statistic_dd as b_statdd
 
 import cProfile
 
@@ -42,11 +46,13 @@ data = Table(data_raw, copy=True)
 
 #flag_list = ['flag_dup','flag_N','flag_outlier','flag_pole']
 flag_list = ['flag_dup']
+#flag_list = ['flag_any']
 
 try:
     bad_rows
 except NameError:
     bad_rows=[]
+    
     
     for i in flag_list:
         
@@ -151,6 +157,10 @@ class MW_dyn:
         self.halo_gc = None
         
         self.halo_gc_res = None
+        
+        self.disc = None
+        
+        self.e_disc = None
 
         self.icrs_res = None
         
@@ -436,12 +446,10 @@ class MW_dyn:
                                            phi=frame.phi,z=frame.z,d_rho=cyl_diff.d_rho.to((u.mas*u.pc)/(u.yr*u.rad),equivalencies=u.dimensionless_angles()),
                                            d_phi=cyl_diff.d_phi.to(u.mas/u.yr,equivalencies=u.dimensionless_angles()),
                                            d_z=cyl_diff.d_z.to((u.mas*u.pc)/(u.yr*u.rad),equivalencies=u.dimensionless_angles()),
-                                           galcen_distance = gc_sun_dist, galcen_v_sun=v_sun, z_sun=gp_z_sun, differential_cls=coord.CylindricalDifferential)
+                                           galcen_distance = gc_sun_dist, galcen_v_sun=v_sun, z_sun=gp_z_sun, differential_type=coord.CylindricalDifferential)
         
         self.icrs_res = new_frame.transform_to(coord.ICRS)
         self.icrs_res.set_representation_cls(coord.SphericalRepresentation,s=coord.SphericalCosLatDifferential)
-        
-#        error_data[2]=error_data[2]*self.scale_dist
         
         err = error_data*np.random.randn(error_data.shape[0],error_data.shape[1])
             
@@ -582,6 +590,8 @@ class MW_dyn:
         
         var = 0
         
+        N_halo = 0
+        
         self.get_halo()
 
         for k in range(N):
@@ -620,8 +630,12 @@ class MW_dyn:
             l_cut[k] = left / len(ang_mom)
             
             l_cut_av += left / len(ang_mom)
+            
+            N_halo += len(ang_mom)
           
-        l_cut_av = l_cut_av / N    
+        l_cut_av = l_cut_av / N  
+        
+        N_halo = N_halo / N
             
         for i in range(N):
         
@@ -633,7 +647,46 @@ class MW_dyn:
         
         pos_L = 1-neg_L
         
-        return neg_L,pos_L,st_dev
+        return neg_L,pos_L,st_dev,N_halo
+    
+    def get_disc(self):
+        
+        input_data = self.sample_tp
+        
+        e_input_data = self.e_sample.transpose()
+        
+        not_disc = []
+        
+        z = self.gc.z.to(u.kpc).value
+        rho = self.gc.rho.to(u.kpc).value 
+        
+        for i in range(len(input_data)):
+            
+            if -2<=z[i]<=2 and 5<=rho[i]<=10:
+                pass
+            else:
+                not_disc.append(i)
+        
+        disc = np.delete(input_data,not_disc,0)
+
+        e_disc = np.delete(input_data,not_disc,0)    
+        
+        self.disc = disc.transpose()
+        
+        self.e_disc = e_disc.transpose()
+        
+        self.icrs_res=coord.ICRS(ra = self.disc[0]*u.degree,dec = self.disc[1]*u.degree,
+                            distance = self.disc[2]*u.pc,
+                            pm_ra_cosdec = self.disc[3]*u.mas/u.yr,
+                            pm_dec = self.disc[4]*u.mas/u.yr,
+                            radial_velocity = self.disc[5]*u.km/u.s)
+
+        self.disc_gc = self.icrs_res.transform_to(coord.Galactocentric(galcen_distance = gc_sun_dist, galcen_v_sun=v_sun, z_sun=gp_z_sun))
+        self.disc_gc.set_representation_cls(coord.CylindricalRepresentation)
+        
+        self.res_v_phi = (self.disc_gc.d_phi*self.disc_gc.rho.to(u.kpc)).to(u.km/u.s,equivalencies =u.dimensionless_angles())
+        
+        return
                     
     
     def plot_sample(self,lim,binwidth):
@@ -652,6 +705,67 @@ class MW_dyn:
         plt.tight_layout()
         plt.legend(fontsize='x-large')
         return 
+
+    
+    def plot_vel_field(self,comp,vel_mod=None):
+        
+        self.get_disc()
+        
+        v_rho = self.disc_gc.d_rho.to(u.km/u.s).value
+        v_phi = self.res_v_phi.value
+        v_z = self.disc_gc.d_z.to(u.km/u.s).value
+        
+        if comp == 'z':
+            v = v_z
+        elif comp == 'rho':
+            v = v_rho
+        else:
+            v = v_phi
+        z = self.disc_gc.z.to(u.kpc).value
+        rho = self.disc_gc.rho.to(u.kpc).value
+        binwidth = 0.1
+        
+        z_bins = np.arange(-2,2+binwidth,binwidth)
+        rho_bins = np.arange(5,10+binwidth,binwidth)
+        v_bins = np.arange(min(v),max(v)+1,1)
+        
+        sample = np.array([z,rho,v])
+        
+        stat,z_edge,rho_edge,sample_ind = b_stat2d(sample[0],sample[1],values=None,statistic='count',bins=[z_bins,rho_bins])
+        
+        sample = np.vstack([sample,sample_ind])
+        
+        """sample_ind gives us the row major ordering of the bins"""
+        
+        bin_range = np.unique(sample_ind)
+        
+        vel_median = np.array([bin_range,np.zeros(len(bin_range))])
+        
+        vel_median = vel_median.transpose()
+        
+        #bad_rows = []
+        
+        for i in range(len(bin_range)):
+            
+            vel = []
+            
+            for j in range(len(sample_ind)):
+                
+                if sample_ind[j] == bin_range[i]:
+                    
+                    vel.append(v[j])
+                    
+        #    if len(vel)<=50:
+        #        bad_rows.append(i)
+                
+            vel_median[i][1] += np.median(vel)
+            
+            
+        #vel_median = np.delete(vel_median,bad_rows)
+        vel_median = vel_median.transpose()
+    
+        """Add code that recovers the ij indices for each bin or finds the corresponding
+        bin in a mesh from sample_ind. Then add each median value to its bin."""
     
     def plot_resamples(self, N, method, lim, binwidth ):
         
@@ -778,6 +892,7 @@ class MW_dyn:
         plt.yticks(fontsize='large')
         plt.xlabel('$L_z$ [km s$^{-1}$ kpc]',fontsize='xx-large')
         plt.ylabel('Energy [$10^5$ km$^2$ s$^{-2}$]',fontsize='xx-large')
+#        plt.title(r'$\mathrm{Default\ sample}$',size='x-large')
         plt.xlim(-4500,4500)
         plt.ylim(-2.1,0.2)
         plt.scatter(ang_mom, energy, s=2, c='none', edgecolors='blue', label='Halo stars from TGAS')
@@ -787,82 +902,4 @@ class MW_dyn:
         
         return ascii.write([self.mean_sample,self.st_dev], filename+'.txt',names=['v_phi','sigma'])
 
-
-#################### Tests ########################
-
-#cProfile.run('smp.error_sampling(e_my_sample)')
-
-        
 smp = MW_dyn(my_sample,e_my_sample,my_data_order)
-
-
-bin_width=[5,10]
-
-N=1000
-
-method=['error','bootstrap']
-
-dip_list = [0,5,10,15,20,30,40]
-
-def produce_plots():
-    
-    for i in range(len(method)):
-            
-            for j in range(len(bin_width)):
-                
-                if method[i] == 'model':
-                                       
-                    for k in range(len(dip_list)):
-                        
-                        dip = dip_list[k]
-                    
-                        smp.get_st_dev(bin_width[j],N,method[i],dip)
-                    
-                        smp.plot_mean(400,method[i],err=True)
-                    
-                        plt.savefig('{}_{}_w{}_d{}'.format(flag_list[0],method[i],bin_width[j],dip))
-                        
-                        plt.close()
-                        
-                        smp.plot_mean(75,method[i],err=True,ymin=1,ymax=1e3)
-                        
-                        plt.savefig('{}_{}_w{}_d{}_z'.format(flag_list[0],method[i],bin_width[j],dip))
-
-                        plt.close()
-
-                else:
-                    
-                    smp.get_st_dev(bin_width[j],N,method[i])
-                    
-                    smp.plot_mean(400,method[i],err=True)
-                    
-                    plt.savefig('{}_{}_w{}'.format(flag_list[0],method[i],bin_width[j]))
-                    
-                    plt.close()
-                    
-                    smp.plot_mean(75,method[i],err=True,ymin=1,ymax=1e3)
-                        
-                    plt.savefig('{}_{}_w{}_z'.format(flag_list[0],method[i],bin_width[j]))
-
-                    plt.close()
-
-
-                
-                    
-#smp.get_halo()
-#plt.figure()               
-#plt.xlim(-400,400)  
-#plt.hist(smp.res_v_phi.value,bins=100,label='Default')
-#smp.model_vel(dip_lim=None,halo=True)
-#plt.hist(smp.res_v_phi.value,bins=100,label='Model')
-#plt.legend()
-
-#cProfile.run('smp.get_st_dev(100,10,str(rand))')
-
-"""1. Making a histogram with 100 bins of original sample and 10 resamples using bootstrap"""
-
-#smp.plot_resamples(10, 'random', 14, N_bins=50)
-
-"""2. Making a histogram with 100 bins of original sample and 5 resamples using error_sampling. Takes ~30 s!"""
-
-#smp.plot_resamples(5, 'error', 14, N_bins=100)
