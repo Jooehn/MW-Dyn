@@ -725,47 +725,50 @@ class MW_dyn:
         rho = self.disc_gc.rho.to(u.kpc).value
         binwidth = 0.1
         
-        z_bins = np.arange(-2,2+binwidth,binwidth)
-        rho_bins = np.arange(5,10+binwidth,binwidth)
-        v_bins = np.arange(min(v),max(v)+1,1)
+        z_bins = np.arange(z.min(),z.max()+binwidth,binwidth)
+        rho_bins = np.arange(rho.min(),rho.max()+binwidth,binwidth)
         
-        sample = np.array([z,rho,v])
+        sample = np.array([rho,z,v])
         
-        stat,z_edge,rho_edge,sample_ind = b_stat2d(sample[0],sample[1],values=None,statistic='count',bins=[z_bins,rho_bins])
+        """Maybe check which data points belong to which bin and 
+        then look at the median of all of them"""
         
-        sample = np.vstack([sample,sample_ind])
+        b_vel_0 = b_stat2d(rho,z,v,statistic='count',bins=[rho_bins,z_bins],expand_binnumbers=False)
         
-        """sample_ind gives us the row major ordering of the bins"""
+        counts = b_vel_0.statistic.flatten()
         
-        bin_range = np.unique(sample_ind)
+        count_ind = b_vel_0.binnumber
         
-        vel_median = np.array([bin_range,np.zeros(len(bin_range))])
+        good_rows = []
         
-        vel_median = vel_median.transpose()
-        
-        #bad_rows = []
-        
-        for i in range(len(bin_range)):
+        for i in range(len(counts)):
             
-            vel = []
-            
-            for j in range(len(sample_ind)):
+            if counts[i] >= 50:
                 
-                if sample_ind[j] == bin_range[i]:
+                for j in range(len(count_ind)):
                     
-                    vel.append(v[j])
-                    
-        #    if len(vel)<=50:
-        #        bad_rows.append(i)
-                
-            vel_median[i][1] += np.median(vel)
-            
-            
-        #vel_median = np.delete(vel_median,bad_rows)
-        vel_median = vel_median.transpose()
-    
-        """Add code that recovers the ij indices for each bin or finds the corresponding
-        bin in a mesh from sample_ind. Then add each median value to its bin."""
+                    if i == count_ind[j]:
+                        
+                        good_rows.append(j)
+                        
+        sample = sample.T[good_rows].T
+        
+        b_vel = b_stat2d(sample[0],sample[1],sample[2],statistic='median',bins=[rho_bins,z_bins],expand_binnumbers=False)
+        
+        v_med = b_vel.statistic
+        
+        v_med[np.isnan(v_med)]=0
+        
+        zc = (b_vel.y_edge[:-1] + b_vel.y_edge[1:]) / 2
+        rhoc = (b_vel.x_edge[:-1] + b_vel.x_edge[1:]) / 2
+        
+        plt.figure()
+        plt.axis([rhoc.min()-1,rhoc.max()+1,zc.min()-1,zc.max()+1])
+        plt.contourf(rhoc,zc,v_med.T,vmin=-20,vmax=20,cmap = plt.cm.get_cmap('plasma'))
+        plt.colorbar(ticks=[-20,-15,-10,-5,0,5,10,15,20])
+        plt.show()
+        
+        return
     
     def plot_resamples(self, N, method, lim, binwidth ):
         
