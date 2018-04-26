@@ -33,26 +33,28 @@ font = {'family': 'serif',
         }
 
 
-try:
-    data_raw
-except NameError:
-    data_raw = ascii.read('Distances_PJM2017.csv', format='fast_csv')
-    pass
-
-data = Table(data_raw, copy=True)
-
-"""flag_list should contain the flags that are to be removed from the data if raised"""
-
-
-#flag_list = ['flag_dup','flag_N','flag_outlier','flag_pole']
-flag_list = ['flag_dup']
-#flag_list = ['flag_any']
-
-try:
-    bad_rows
-except NameError:
+def load_data(file,flagset):
+    
+    data_raw = ascii.read(file, format='fast_csv')
+    
+    data = Table(data_raw, copy=True)
+    
     bad_rows=[]
     
+    if flagset == 'flag_dup':
+        
+        flag_list=['flag_dup']
+        
+    elif flagset == 'flag_any':
+        
+        flag_list=['flag_any']
+
+    elif flagset == 'flag_any-lowlogg':
+        
+        flag_list=['flag_dup','flag_N','flag_outlier','flag_pole']
+    
+    else:
+        raise Exception('Not a valid flagset')
     
     for i in flag_list:
         
@@ -60,8 +62,19 @@ except NameError:
             
             if data[i][j]==1 and j not in bad_rows:
                 bad_rows.append(j)
-            
-data.remove_rows(bad_rows)
+                
+    data.remove_rows(bad_rows)
+    
+    return data
+
+
+flagset = 'flag_dup'
+
+try:
+    data
+except NameError:
+    
+    data = load_data('Distances_PJM2017.csv',flagset)
 
 RA = data['RAdeg']*u.degree
 DEC = data['DEdeg']*u.degree
@@ -78,9 +91,6 @@ e_pm_RA = data['pmRA_error_TGAS']*u.mas/u.yr
 e_pm_DEC = data['pmDE_error_TGAS']*u.mas/u.yr
 e_rad_vel = data['eHRV']*u.km/u.s
 e_met = data['eMet_K']*u.dex
-
-
-############## Bootstrapper ##################
 
 my_data_order=['RA', 'DEC', 'dist', 'pm_RA', 'pm_DEC', 'rad_vel','metallicity']
 
@@ -112,8 +122,9 @@ class MW_dyn:
         save_mean_data: saves the current data stored in self.mean_sample to an ascii file
     """
     
-    def __init__(self,sample,e_sample=None,data_order=None):
+    def __init__(self,sample,flagset,e_sample=None,data_order=None):
         
+        self.flagset = flagset
         
         self.data_order = data_order
         
@@ -730,34 +741,33 @@ class MW_dyn:
         
         sample = np.array([rho,z,v])
         
-        """Maybe check which data points belong to which bin and 
-        then look at the median of all of them"""
+        """Remove low count stars after plotting the contour"""
         
-        b_vel_0 = b_stat2d(rho,z,v,statistic='count',bins=[rho_bins,z_bins],expand_binnumbers=False)
-        
-        counts = b_vel_0.statistic.flatten()
-        
-        count_ind = b_vel_0.binnumber
-        
-        good_rows = []
-        
-        for i in range(len(counts)):
-            
-            if counts[i] >= 50:
-                
-                for j in range(len(count_ind)):
-                    
-                    if i == count_ind[j]:
-                        
-                        good_rows.append(j)
-                        
-        sample = sample.T[good_rows].T
+#        good_rows = []
+#        
+#        for i in range(len(counts)):
+#            
+#            if counts[i] >= 50:
+#                
+#                for j in range(len(count_ind)):
+#                    
+#                    if i == count_ind[j]:
+#                        
+#                        good_rows.append(j)
+#                        
+#        sample = sample.T[good_rows].T
         
         b_vel = b_stat2d(sample[0],sample[1],sample[2],statistic='median',bins=[rho_bins,z_bins],expand_binnumbers=False)
         
         v_med = b_vel.statistic
         
-        v_med[np.isnan(v_med)]=0
+#        v_med[np.isnan(v_med)]=0
+        
+        b_vel_c = b_stat2d(rho,z,v,statistic='count',bins=[rho_bins,z_bins],expand_binnumbers=False)
+
+        counts = b_vel_c.statistic
+        
+        v_med[counts < 50] = np.nan
         
         zc = (b_vel.y_edge[:-1] + b_vel.y_edge[1:]) / 2
         rhoc = (b_vel.x_edge[:-1] + b_vel.x_edge[1:]) / 2
@@ -765,6 +775,7 @@ class MW_dyn:
         plt.figure()
         plt.axis([rhoc.min()-1,rhoc.max()+1,zc.min()-1,zc.max()+1])
         plt.contourf(rhoc,zc,v_med.T,vmin=-20,vmax=20,cmap = plt.cm.get_cmap('plasma'))
+#        plt.imshow(v_med.T)
         plt.colorbar(ticks=[-20,-15,-10,-5,0,5,10,15,20])
         plt.show()
         
@@ -898,11 +909,12 @@ class MW_dyn:
 #        plt.title(r'$\mathrm{Default\ sample}$',size='x-large')
         plt.xlim(-4500,4500)
         plt.ylim(-2.1,0.2)
-        plt.scatter(ang_mom, energy, s=2, c='none', edgecolors='blue', label='Halo stars from TGAS')
+        plt.scatter(ang_mom, energy, s=2, c='none', edgecolors='blue', label='{} halo subset'.format(self.flagset))
+        plt.legend(fontsize='x-large')
         plt.tight_layout()
         
     def save_mean_data(self,filename):
         
         return ascii.write([self.mean_sample,self.st_dev], filename+'.txt',names=['v_phi','sigma'])
 
-smp = MW_dyn(my_sample,e_my_sample,my_data_order)
+smp = MW_dyn(my_sample,flagset,e_my_sample,my_data_order)
