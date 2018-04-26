@@ -52,7 +52,15 @@ def load_data(file,flagset):
     elif flagset == 'flag_any-lowlogg':
         
         flag_list=['flag_dup','flag_N','flag_outlier','flag_pole']
-    
+        
+    elif flagset == 'None':
+        
+        flag_list = []
+        
+    elif flagset == 'custom':
+        
+        flag_list=[str(input('Tell me which flags to remove: '))]
+
     else:
         raise Exception('Not a valid flagset')
     
@@ -68,7 +76,7 @@ def load_data(file,flagset):
     return data
 
 
-flagset = 'flag_dup'
+flagset = 'flag_any'
 
 try:
     data
@@ -237,30 +245,6 @@ class MW_dyn:
                             pm_ra_cosdec=self.resample[3]*u.mas/u.yr,
                             pm_dec=self.resample[4]*u.mas/u.yr,
                             radial_velocity=self.resample[5]*u.km/u.s)
-        
-        
-#        self.resample = self.sample + err
-#                
-#        self.icrs_res=coord.ICRS(ra = self.resample[0]*u.degree,dec = self.resample[1]*u.degree,
-#                            distance=self.resample[2]*u.pc,
-#                            pm_ra_cosdec=self.resample[3]*u.mas/u.yr,
-#                            pm_dec=self.resample[4]*u.mas/u.yr,
-#                            radial_velocity=self.resample[5]*u.km/u.s)
-#           
-#        err = self.e_sample*np.random.randn(self.e_sample.shape[0],self.e_sample.shape[1])
-#        
-#        self.resample = self.sample + err
-#                
-#        self.icrs_res=coord.ICRS(ra = self.resample[0]*u.degree,dec = self.resample[1]*u.degree,
-#                            distance=self.resample[2]*u.pc,
-#                            pm_ra_cosdec=self.resample[3]*u.mas/u.yr,
-#                            pm_dec=self.resample[4]*u.mas/u.yr,
-#                            radial_velocity=self.resample[5]*u.km/u.s)
-#
-#        self.gc_res = self.icrs_res.transform_to(coord.Galactocentric(galcen_distance = gc_sun_dist, galcen_v_sun=v_sun, z_sun=gp_z_sun))
-#        self.gc_res.set_representation_cls(coord.CylindricalRepresentation)
-#
-#        self.res_v_phi = (self.gc_res.d_phi*self.gc_res.rho.to(u.kpc)).to(u.km/u.s,equivalencies =u.dimensionless_angles())
 
         
         new_frame = self.icrs_res.transform_to(coord.Galactocentric(galcen_distance = gc_sun_dist, galcen_v_sun=v_sun, z_sun=gp_z_sun))
@@ -680,7 +664,7 @@ class MW_dyn:
         
         disc = np.delete(input_data,not_disc,0)
 
-        e_disc = np.delete(input_data,not_disc,0)    
+        e_disc = np.delete(e_input_data,not_disc,0)    
         
         self.disc = disc.transpose()
         
@@ -728,55 +712,57 @@ class MW_dyn:
         
         if comp == 'z':
             v = v_z
+            v_string = '$z$'
+            vmin = -20
+            vmax = 20
         elif comp == 'rho':
             v = v_rho
-        else:
+            v_string = r'$\rho$'
+            vmin = -20
+            vmax = 20
+        elif comp == 'phi':
             v = v_phi
+            v_string = r'$\phi$'
+            vmin=-150
+            vmax=230
+        else:
+            raise Exception('Not a valid input. Try z,rho or phi.')
         z = self.disc_gc.z.to(u.kpc).value
         rho = self.disc_gc.rho.to(u.kpc).value
         binwidth = 0.1
         
         z_bins = np.arange(z.min(),z.max()+binwidth,binwidth)
         rho_bins = np.arange(rho.min(),rho.max()+binwidth,binwidth)
+
         
-        sample = np.array([rho,z,v])
-        
-        """Remove low count stars after plotting the contour"""
-        
-#        good_rows = []
-#        
-#        for i in range(len(counts)):
-#            
-#            if counts[i] >= 50:
-#                
-#                for j in range(len(count_ind)):
-#                    
-#                    if i == count_ind[j]:
-#                        
-#                        good_rows.append(j)
-#                        
-#        sample = sample.T[good_rows].T
-        
-        b_vel = b_stat2d(sample[0],sample[1],sample[2],statistic='median',bins=[rho_bins,z_bins],expand_binnumbers=False)
+        b_vel = b_stat2d(rho,z,v,statistic='median',bins=[rho_bins,z_bins])
         
         v_med = b_vel.statistic
         
-#        v_med[np.isnan(v_med)]=0
+        b_vel_c = b_stat2d(rho,z,v,statistic='count',bins=[rho_bins,z_bins])
         
-        b_vel_c = b_stat2d(rho,z,v,statistic='count',bins=[rho_bins,z_bins],expand_binnumbers=False)
-
         counts = b_vel_c.statistic
-        
+       
         v_med[counts < 50] = np.nan
+        
         
         zc = (b_vel.y_edge[:-1] + b_vel.y_edge[1:]) / 2
         rhoc = (b_vel.x_edge[:-1] + b_vel.x_edge[1:]) / 2
         
+        extent = [b_vel.x_edge[0], b_vel.x_edge[-1],b_vel.y_edge[0],b_vel.y_edge[-1]]
+#        extent = [rhoc[0],rhoc[-1],zc[0],zc[-1]]
+        
         plt.figure()
-        plt.axis([rhoc.min()-1,rhoc.max()+1,zc.min()-1,zc.max()+1])
-        plt.contourf(rhoc,zc,v_med.T,vmin=-20,vmax=20,cmap = plt.cm.get_cmap('plasma'))
-#        plt.imshow(v_med.T)
-        plt.colorbar(ticks=[-20,-15,-10,-5,0,5,10,15,20])
+        plt.title('Median '+'{}'.format(v_string)+' distribution for '+'{}'.format(self.flagset))
+        plt.xlabel(r'$\rho\ \mathrm{[kpc]}$',size='x-large')
+        plt.ylabel('$z\ \mathrm{[kpc]}$',size='x-large')
+        plt.axis([rhoc.min()-0.5,rhoc.max()+0.5,zc.min()-0.5,zc.max()+0.5])
+        plt.grid(True)
+#        plt.contourf(rhoc,zc,v_med.T,vmin=vmin,vmax=vmax,cmap = plt.cm.get_cmap('gnuplot'))
+#        
+        plt.imshow(v_med.T,origin='lower',interpolation='bilinear',vmin=vmin,vmax=vmax,cmap = plt.cm.get_cmap('jet'),extent=extent)
+
+        plt.colorbar(extendrect=True)
         plt.show()
         
         return
