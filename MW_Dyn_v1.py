@@ -5,13 +5,11 @@ import numpy as np
 import astropy.units as u
 import astropy.coordinates as coord
 import random
-import sys
 from astropy.io import ascii
 from astropy.table import Table
 from astropy.constants import G
-from scipy.stats import binned_statistic as b_stat
 from scipy.stats import binned_statistic_2d as b_stat2d
-from scipy.stats import binned_statistic_dd as b_statdd
+from matplotlib.ticker import AutoMinorLocator
 
 import cProfile
 
@@ -76,7 +74,7 @@ def load_data(file,flagset):
     return data
 
 
-flagset = 'flag_any'
+flagset = 'flag_dup'
 
 try:
     data
@@ -99,6 +97,12 @@ e_pm_RA = data['pmRA_error_TGAS']*u.mas/u.yr
 e_pm_DEC = data['pmDE_error_TGAS']*u.mas/u.yr
 e_rad_vel = data['eHRV']*u.km/u.s
 e_met = data['eMet_K']*u.dex
+
+#e_dist = np.zeros(len(data))*u.pc
+#e_pm_RA = np.zeros(len(data))*u.mas/u.yr
+#e_pm_DEC = np.zeros(len(data))*u.mas/u.yr
+#e_rad_vel = np.zeros(len(data))*u.km/u.s
+#e_met = np.zeros(len(data))*u.dex
 
 my_data_order=['RA', 'DEC', 'dist', 'pm_RA', 'pm_DEC', 'rad_vel','metallicity']
 
@@ -399,9 +403,12 @@ class MW_dyn:
             
             error_data = self.e_halo
             
-            for i in range(len(self.halo_gc)):
+            for j in range(len(smp.halo_gc)):
+                
+                velocity = halo0 + np.random.randn(3)*halo_disp
+                vel_tot[j] += velocity
             
-                vel_tot[i] = halo0 + np.random.randn(3)*halo_disp
+#            vel_tot = halo0 + np.random.randn(vel_tot.shape[0],vel_tot.shape[1])*halo_disp
                 
         else:
     
@@ -471,7 +478,8 @@ class MW_dyn:
             
             self.gc_res = new_frame
         
-        return self.res_v_phi
+#        return self.res_v_phi.value
+            return vel_tot
     
     def get_ang_mom(self, halo=False):
         
@@ -590,8 +598,7 @@ class MW_dyn:
         self.get_halo()
 
         for k in range(N):
-      
-            low_E=[]
+            
             left = 0
             
             if model == True:
@@ -606,21 +613,13 @@ class MW_dyn:
             
             energy = self.get_energy(halo=True).value
             
-            for i in range(len(energy)):
-                
-                if energy[i]<=E_cut:
-                    
-                    low_E.append(i)
+            low_E = np.where(energy<E_cut)
                     
             energy = np.delete(energy,low_E)
                     
             ang_mom = np.delete(ang_mom,low_E)
             
-            for j in range(len(ang_mom)):
-                
-                if ang_mom[j] <=0:
-                    
-                    left+=1
+            left = len(np.where(ang_mom < 0)[0])
                     
             l_cut[k] = left / len(ang_mom)
             
@@ -644,23 +643,34 @@ class MW_dyn:
         
         return neg_L,pos_L,st_dev,N_halo
     
-    def get_disc(self):
+    def get_disc(self,model=False,scale_dist=None):
+        
+        frame = self.gc
         
         input_data = self.sample_tp
         
         e_input_data = self.e_sample.transpose()
         
-        not_disc = []
-        
-        z = self.gc.z.to(u.kpc).value
-        rho = self.gc.rho.to(u.kpc).value 
-        
-        for i in range(len(input_data)):
+        if model == True:
             
-            if -2<=z[i]<=2 and 5<=rho[i]<=10:
-                pass
-            else:
-                not_disc.append(i)
+            self.model_vel(dip_lim=None,scale_dist=scale_dist)
+            
+            input_data = self.resample.T
+            
+            frame = self.gc_res
+        
+        z = frame.z.to(u.kpc).value
+        rho = frame.rho.to(u.kpc).value
+        
+        z_cond1 = np.where(z<-2)
+        z_cond2 = np.where(2<z)
+        z_cond = np.concatenate([z_cond1[0],z_cond2[0]])
+        
+        rho_cond1 = np.where(rho<5)
+        rho_cond2 = np.where(10<rho)
+        rho_cond = np.concatenate([rho_cond1[0],rho_cond2[0]])
+        
+        not_disc = np.union1d(z_cond,rho_cond)
         
         disc = np.delete(input_data,not_disc,0)
 
@@ -702,35 +712,38 @@ class MW_dyn:
         return 
 
     
-    def plot_vel_field(self,comp,vel_mod=None):
+    def plot_vel_field(self,comp,model=False,scale_dist=None):
         
-        self.get_disc()
+        self.get_disc(model,scale_dist)
         
-        v_rho = self.disc_gc.d_rho.to(u.km/u.s).value
-        v_phi = self.res_v_phi.value
-        v_z = self.disc_gc.d_z.to(u.km/u.s).value
+        frame = self.disc_gc
+            
+        z = frame.z.to(u.kpc).value
+        rho = frame.rho.to(u.kpc).value
+        
+        v_rho = frame.d_rho.to(u.km/u.s).value
+        v_phi = (frame.d_phi*frame.rho.to(u.kpc)).to(u.km/u.s,equivalencies =u.dimensionless_angles())
+        v_z = frame.d_z.to(u.km/u.s).value
         
         if comp == 'z':
             v = v_z
-            v_string = '$z$'
+            v_string = '$v_z$'
             vmin = -20
             vmax = 20
         elif comp == 'rho':
             v = v_rho
-            v_string = r'$\rho$'
+            v_string = r'$v_\rho$'
             vmin = -20
             vmax = 20
         elif comp == 'phi':
             v = v_phi
-            v_string = r'$\phi$'
+            v_string = r'$v_\phi$'
             vmin=-150
             vmax=230
         else:
             raise Exception('Not a valid input. Try z,rho or phi.')
-        z = self.disc_gc.z.to(u.kpc).value
-        rho = self.disc_gc.rho.to(u.kpc).value
+
         binwidth = 0.1
-        
         z_bins = np.arange(z.min(),z.max()+binwidth,binwidth)
         rho_bins = np.arange(rho.min(),rho.max()+binwidth,binwidth)
 
@@ -745,7 +758,6 @@ class MW_dyn:
        
         v_med[counts < 50] = np.nan
         
-        
         zc = (b_vel.y_edge[:-1] + b_vel.y_edge[1:]) / 2
         rhoc = (b_vel.x_edge[:-1] + b_vel.x_edge[1:]) / 2
         
@@ -753,17 +765,32 @@ class MW_dyn:
 #        extent = [rhoc[0],rhoc[-1],zc[0],zc[-1]]
         
         plt.figure()
-        plt.title('Median '+'{}'.format(v_string)+' distribution for '+'{}'.format(self.flagset))
-        plt.xlabel(r'$\rho\ \mathrm{[kpc]}$',size='x-large')
-        plt.ylabel('$z\ \mathrm{[kpc]}$',size='x-large')
-        plt.axis([rhoc.min()-0.5,rhoc.max()+0.5,zc.min()-0.5,zc.max()+0.5])
-        plt.grid(True)
-#        plt.contourf(rhoc,zc,v_med.T,vmin=vmin,vmax=vmax,cmap = plt.cm.get_cmap('gnuplot'))
+        ax = plt.axes()
+        plt.title('Median '+'{}'.format(v_string)+' for '+'{}'.format(self.flagset),size='xx-large')
+        plt.text(2,2,s='{}'.format(self.flagset))
+        plt.xlabel(r'$\rho\ \mathrm{[kpc]}$',size='xx-large')
+        plt.ylabel('$z\ \mathrm{[kpc]}$',size='xx-large')
+        plt.xticks(size='x-large')
+        plt.yticks(size='x-large')
+#        plt.axis([rhoc.min()-0.5,rhoc.max()+0.5,zc.min()-0.5,zc.max()+0.5])
+        plt.axis([6,10,-1.5,1.5])
+
+        ax.minorticks_on()
+        ax.set_yticks(np.arange(-1,2,1))
+        ax.set_xticks(np.arange(7,10,1))   
+#        ax.set_yticks(np.arange(-2,2+1,1))
+#        ax.set_xticks(np.arange(5,10+1,1))        
+        ax.xaxis.set_minor_locator(AutoMinorLocator(2))
+        ax.yaxis.set_minor_locator(AutoMinorLocator(2))
+        ax.grid(True,which='major',linestyle=':',lw=1.2)
+        ax.grid(True,which='minor',linestyle=':',lw=1.2)
+        
+#        plt.contourf(rhoc,zc,v_med.T,vmin=vmin,vmax=vmax,cmap = plt.cm.get_cmap('jet'))
 #        
         plt.imshow(v_med.T,origin='lower',interpolation='bilinear',vmin=vmin,vmax=vmax,cmap = plt.cm.get_cmap('jet'),extent=extent)
-
-        plt.colorbar(extendrect=True)
-        plt.show()
+        cb = plt.colorbar(orientation='vertical', extend='both')
+        cb.set_label('km s$^{-1}$',size='x-large')
+        plt.tight_layout()
         
         return
     
