@@ -74,7 +74,7 @@ def load_data(file,flagset):
     return data
 
 
-flagset = 'flag_dup'
+flagset = 'flag_any'
 
 try:
     data
@@ -714,16 +714,26 @@ class MW_dyn:
     
     def plot_vel_field(self,comp,model=False,scale_dist=None):
         
+        if model == True:
+            N=100
+        else:
+            N=1
+            
         self.get_disc(model,scale_dist)
-        
+            
         frame = self.disc_gc
             
-        z = frame.z.to(u.kpc).value
-        rho = frame.rho.to(u.kpc).value
+        z0 = frame.z.to(u.kpc).value
+        rho0 = frame.rho.to(u.kpc).value
         
         v_rho = frame.d_rho.to(u.km/u.s).value
         v_phi = (frame.d_phi*frame.rho.to(u.kpc)).to(u.km/u.s,equivalencies =u.dimensionless_angles())
         v_z = frame.d_z.to(u.km/u.s).value
+        
+        binwidth = 0.2
+        z_bins = np.arange(z0.min(),z0.max()+binwidth,binwidth)
+        rho_bins = np.arange(rho0.min(),rho0.max()+binwidth,binwidth)
+
         
         if comp == 'z':
             v = v_z
@@ -742,44 +752,61 @@ class MW_dyn:
             vmax=230
         else:
             raise Exception('Not a valid input. Try z,rho or phi.')
-
-        binwidth = 0.1
-        z_bins = np.arange(z.min(),z.max()+binwidth,binwidth)
-        rho_bins = np.arange(rho.min(),rho.max()+binwidth,binwidth)
-
         
-        b_vel = b_stat2d(rho,z,v,statistic='median',bins=[rho_bins,z_bins])
+        for i in range(N):
         
-        v_med = b_vel.statistic
-        
-        b_vel_c = b_stat2d(rho,z,v,statistic='count',bins=[rho_bins,z_bins])
-        
-        counts = b_vel_c.statistic
+            self.get_disc(model,scale_dist)
+            
+            frame = self.disc_gc
+            
+            v_rho = frame.d_rho.to(u.km/u.s).value
+            v_phi = (frame.d_phi*frame.rho.to(u.kpc)).to(u.km/u.s,equivalencies =u.dimensionless_angles())
+            v_z = frame.d_z.to(u.km/u.s).value
+    
+            b_vel = b_stat2d(rho0,z0,v,statistic='median',bins=[rho_bins,z_bins])
+            
+            try:
+                v_med
+            except NameError:
+                v_med = np.zeros(b_vel.statistic.shape)
+                counts = np.zeros(b_vel.statistic.shape)
+                pass
+            
+            v_med += b_vel.statistic
+            
+            b_vel_c = b_stat2d(rho0,z0,v,statistic='count',bins=[rho_bins,z_bins])
+            
+            counts += b_vel_c.statistic
        
+        v_med = v_med / N
+        counts = counts / N
+        
         v_med[counts < 50] = np.nan
         
         zc = (b_vel.y_edge[:-1] + b_vel.y_edge[1:]) / 2
         rhoc = (b_vel.x_edge[:-1] + b_vel.x_edge[1:]) / 2
         
         extent = [b_vel.x_edge[0], b_vel.x_edge[-1],b_vel.y_edge[0],b_vel.y_edge[-1]]
-#        extent = [rhoc[0],rhoc[-1],zc[0],zc[-1]]
         
         plt.figure()
         ax = plt.axes()
-        plt.title('Median '+'{}'.format(v_string)+' for '+'{}'.format(self.flagset),size='xx-large')
+        if model == True:
+            plt.title('Mean modelled median '+'{}'.format(v_string)+' for '+'{}'.format(self.flagset),size='xx-large')
+        else:     
+            plt.title('Median '+'{}'.format(v_string)+' for '+'{}'.format(self.flagset),size='xx-large')
         plt.text(2,2,s='{}'.format(self.flagset))
         plt.xlabel(r'$\rho\ \mathrm{[kpc]}$',size='xx-large')
         plt.ylabel('$z\ \mathrm{[kpc]}$',size='xx-large')
         plt.xticks(size='x-large')
         plt.yticks(size='x-large')
-#        plt.axis([rhoc.min()-0.5,rhoc.max()+0.5,zc.min()-0.5,zc.max()+0.5])
-        plt.axis([6,10,-1.5,1.5])
+        plt.axis([rhoc.min()-0.5,rhoc.max()+0.5,zc.min()-0.5,zc.max()+0.5])
+#        plt.axis([8,9.5,-1.5,0])
 
-        ax.minorticks_on()
-        ax.set_yticks(np.arange(-1,2,1))
-        ax.set_xticks(np.arange(7,10,1))   
-#        ax.set_yticks(np.arange(-2,2+1,1))
-#        ax.set_xticks(np.arange(5,10+1,1))        
+        ax.minorticks_on()   
+        ax.set_yticks(np.arange(-2,2+1,1))
+        ax.set_xticks(np.arange(5,10+1,1))   
+#        ax.set_yticks(np.arange(-1.5,0.5,0.5))
+#        ax.set_xticks(np.arange(8,10,0.5)) 
         ax.xaxis.set_minor_locator(AutoMinorLocator(2))
         ax.yaxis.set_minor_locator(AutoMinorLocator(2))
         ax.grid(True,which='major',linestyle=':',lw=1.2)
