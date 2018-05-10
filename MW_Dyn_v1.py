@@ -74,7 +74,7 @@ def load_data(file,flagset):
     return data
 
 
-flagset = 'flag_any'
+flagset = 'flag_dup'
 
 try:
     data
@@ -718,69 +718,62 @@ class MW_dyn:
             N=100
         else:
             N=1
-            
-        self.get_disc(model,scale_dist)
-            
-        frame = self.disc_gc
-            
-        z0 = frame.z.to(u.kpc).value
-        rho0 = frame.rho.to(u.kpc).value
-        
-        v_rho = frame.d_rho.to(u.km/u.s).value
-        v_phi = (frame.d_phi*frame.rho.to(u.kpc)).to(u.km/u.s,equivalencies =u.dimensionless_angles())
-        v_z = frame.d_z.to(u.km/u.s).value
-        
-        binwidth = 0.2
-        z_bins = np.arange(z0.min(),z0.max()+binwidth,binwidth)
-        rho_bins = np.arange(rho0.min(),rho0.max()+binwidth,binwidth)
 
         
-        if comp == 'z':
-            v = v_z
-            v_string = '$v_z$'
-            vmin = -20
-            vmax = 20
-        elif comp == 'rho':
-            v = v_rho
-            v_string = r'$v_\rho$'
-            vmin = -20
-            vmax = 20
-        elif comp == 'phi':
-            v = v_phi
-            v_string = r'$v_\phi$'
-            vmin=-150
-            vmax=230
-        else:
-            raise Exception('Not a valid input. Try z,rho or phi.')
+        binwidth = 0.2
+        z_bins = np.arange(-2,2+binwidth,binwidth)
+        rho_bins = np.arange(5,10+binwidth,binwidth)
         
         for i in range(N):
         
-            self.get_disc(model,scale_dist)
+            self.get_disc(model)
+                
+            z = self.disc_gc.z.to(u.kpc)
+            rho = self.disc_gc.rho.to(u.kpc)
             
-            frame = self.disc_gc
-            
-            v_rho = frame.d_rho.to(u.km/u.s).value
-            v_phi = (frame.d_phi*frame.rho.to(u.kpc)).to(u.km/u.s,equivalencies =u.dimensionless_angles())
-            v_z = frame.d_z.to(u.km/u.s).value
+            if comp == 'z':
+                v = self.disc_gc.d_z.to(u.km/u.s).value
+                v_string = '$v_z$'
+                vmin = -20
+                vmax = 20
+            elif comp == 'rho':
+                v = self.disc_gc.d_rho.to(u.km/u.s).value
+                v_string = r'$v_\rho$'
+                vmin = -20
+                vmax = 20
+            elif comp == 'phi':
+                v = (self.disc_gc.d_phi*self.disc_gc.rho.to(u.kpc)).to(u.km/u.s,equivalencies =u.dimensionless_angles())
+                v_string = r'$v_\phi$'
+                vmin=-150
+                vmax=230
     
-            b_vel = b_stat2d(rho0,z0,v,statistic='median',bins=[rho_bins,z_bins])
+            b_vel = b_stat2d(rho,z,v,statistic='median',bins=[rho_bins,z_bins])
             
             try:
                 v_med
             except NameError:
                 v_med = np.zeros(b_vel.statistic.shape)
                 counts = np.zeros(b_vel.statistic.shape)
+                var = b_vel.statistic
                 pass
             
             v_med += b_vel.statistic
             
-            b_vel_c = b_stat2d(rho0,z0,v,statistic='count',bins=[rho_bins,z_bins])
+            b_vel_c = b_stat2d(rho,z,v,statistic='count',bins=[rho_bins,z_bins])
             
             counts += b_vel_c.statistic
+            
+            if i == 1:
+                continue
+                           
+            var = np.dstack((var,b_vel.statistic))
        
         v_med = v_med / N
         counts = counts / N
         
+        st_dev = np.nanstd(var,axis=2,ddof=1)
+        
+        st_dev[counts < 50] = np.nan
         v_med[counts < 50] = np.nan
         
         zc = (b_vel.y_edge[:-1] + b_vel.y_edge[1:]) / 2
@@ -788,38 +781,38 @@ class MW_dyn:
         
         extent = [b_vel.x_edge[0], b_vel.x_edge[-1],b_vel.y_edge[0],b_vel.y_edge[-1]]
         
-        plt.figure()
-        ax = plt.axes()
-        if model == True:
-            plt.title('Mean modelled median '+'{}'.format(v_string)+' for '+'{}'.format(self.flagset),size='xx-large')
-        else:     
-            plt.title('Median '+'{}'.format(v_string)+' for '+'{}'.format(self.flagset),size='xx-large')
-        plt.text(2,2,s='{}'.format(self.flagset))
-        plt.xlabel(r'$\rho\ \mathrm{[kpc]}$',size='xx-large')
-        plt.ylabel('$z\ \mathrm{[kpc]}$',size='xx-large')
-        plt.xticks(size='x-large')
-        plt.yticks(size='x-large')
-        plt.axis([rhoc.min()-0.5,rhoc.max()+0.5,zc.min()-0.5,zc.max()+0.5])
+#        plt.figure()
+#        ax = plt.axes()
+#        if model == True:
+#            plt.title('Mean modelled median '+'{}'.format(v_string)+' for '+'{}'.format(self.flagset),size='xx-large')
+#        else:     
+#            plt.title('Median '+'{}'.format(v_string)+' for '+'{}'.format(self.flagset),size='xx-large')
+#        plt.text(2,2,s='{}'.format(self.flagset))
+#        plt.xlabel(r'$\rho\ \mathrm{[kpc]}$',size='xx-large')
+#        plt.ylabel('$z\ \mathrm{[kpc]}$',size='xx-large')
+#        plt.xticks(size='x-large')
+#        plt.yticks(size='x-large')
+##        plt.axis([rhoc.min()-0.5,rhoc.max()+0.5,zc.min()-0.5,zc.max()+0.5])
 #        plt.axis([8,9.5,-1.5,0])
-
-        ax.minorticks_on()   
-        ax.set_yticks(np.arange(-2,2+1,1))
-        ax.set_xticks(np.arange(5,10+1,1))   
+#
+#        ax.minorticks_on()   
+##        ax.set_yticks(np.arange(-2,2+1,1))
+##        ax.set_xticks(np.arange(5,10+1,1))   
 #        ax.set_yticks(np.arange(-1.5,0.5,0.5))
 #        ax.set_xticks(np.arange(8,10,0.5)) 
-        ax.xaxis.set_minor_locator(AutoMinorLocator(2))
-        ax.yaxis.set_minor_locator(AutoMinorLocator(2))
-        ax.grid(True,which='major',linestyle=':',lw=1.2)
-        ax.grid(True,which='minor',linestyle=':',lw=1.2)
-        
-#        plt.contourf(rhoc,zc,v_med.T,vmin=vmin,vmax=vmax,cmap = plt.cm.get_cmap('jet'))
+#        ax.xaxis.set_minor_locator(AutoMinorLocator(2))
+#        ax.yaxis.set_minor_locator(AutoMinorLocator(2))
+#        ax.grid(True,which='major',linestyle=':',lw=1.2)
+#        ax.grid(True,which='minor',linestyle=':',lw=1.2)
 #        
-        plt.imshow(v_med.T,origin='lower',interpolation='bilinear',vmin=vmin,vmax=vmax,cmap = plt.cm.get_cmap('jet'),extent=extent)
-        cb = plt.colorbar(orientation='vertical', extend='both')
-        cb.set_label('km s$^{-1}$',size='x-large')
-        plt.tight_layout()
+##        plt.contourf(rhoc,zc,v_med.T,vmin=vmin,vmax=vmax,cmap = plt.cm.get_cmap('jet'))
+##        
+#        plt.imshow(v_med.T,origin='lower',interpolation='bilinear',vmin=vmin,vmax=vmax,cmap = plt.cm.get_cmap('jet'),extent=extent)
+#        cb = plt.colorbar(orientation='vertical', extend='both')
+#        cb.set_label('km s$^{-1}$',size='x-large')
+#        plt.tight_layout()
         
-        return
+        return v_med, st_dev, zc, rhoc, extent, v_string
     
     def plot_resamples(self, N, method, lim, binwidth ):
         
