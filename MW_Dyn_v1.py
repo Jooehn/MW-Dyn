@@ -57,7 +57,7 @@ def load_data(file,flagset):
         
     elif flagset == 'custom':
         
-        flag_list=[str(input('Tell me which flags to remove: '))]
+        flag_list=str(input('Tell me which flags to remove: ')).split(',')
 
     else:
         raise Exception('Not a valid flagset')
@@ -71,7 +71,7 @@ def load_data(file,flagset):
                 
     data.remove_rows(bad_rows)
     
-    return data
+    return data,data_raw
 
 
 flagset = 'flag_dup'
@@ -80,7 +80,7 @@ try:
     data
 except NameError:
     
-    data = load_data('Distances_PJM2017.csv',flagset)
+    data,data_raw = load_data('Distances_PJM2017.csv',flagset)
 
 RA = data['RAdeg']*u.degree
 DEC = data['DEdeg']*u.degree
@@ -373,6 +373,8 @@ class MW_dyn:
             
         wthin = 0.91
         wthick= 0.08
+#        wthin = 0.70
+#        wthick= 0.20
         whalo = 1.-wthin-wthick
         
         thin0 = np.array([0,-215,0])
@@ -384,16 +386,16 @@ class MW_dyn:
         halo_disp = np.array([160,100,100])
         
         which = np.random.random_sample(len(self.gc))
+    
+        if scale_dist==None:
+                
+            self.scale_dist = 1
+                
+        else:
+            
+            self.scale_dist = scale_dist
         
         if halo == True:
-            
-            if scale_dist==None:
-                
-                self.scale_dist = 1
-                
-            else:
-            
-                self.scale_dist = scale_dist
             
             frame = self.halo_gc
             
@@ -409,10 +411,8 @@ class MW_dyn:
                 vel_tot[j] += velocity
             
 #            vel_tot = halo0 + np.random.randn(vel_tot.shape[0],vel_tot.shape[1])*halo_disp
-                
+
         else:
-    
-            self.scale_dist = 1
             
             frame = self.gc
             
@@ -712,13 +712,7 @@ class MW_dyn:
         return 
 
     
-    def plot_vel_field(self,comp,model=False,scale_dist=None):
-        
-        if model == True:
-            N=100
-        else:
-            N=1
-
+    def plot_vel_field(self,comp,N=1,model=False,scale_dist=None):
         
         binwidth = 0.2
         z_bins = np.arange(-2,2+binwidth,binwidth)
@@ -726,7 +720,7 @@ class MW_dyn:
         
         for i in range(N):
         
-            self.get_disc(model)
+            self.get_disc(model,scale_dist)
                 
             z = self.disc_gc.z.to(u.kpc)
             rho = self.disc_gc.rho.to(u.kpc)
